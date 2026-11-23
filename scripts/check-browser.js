@@ -114,16 +114,16 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
   await send('Page.navigate', { url: 'http://127.0.0.1:' + server.address().port + prefix });
-  await waitFor(() => evaluate("document.title === '????????? � PRP'"));
+  await waitFor(() => evaluate("document.title === 'Настройки · PRP'"));
   assert.equal(await evaluate("document.querySelector('#token').type"), 'password');
   assert.equal(await evaluate("document.querySelector('#branch').value"), 'main');
   assert.equal(await evaluate('document.documentElement.scrollWidth === innerWidth'), true);
   assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(17, 24, 32)');
 
   await evaluate("location.hash = '#more'");
-  await waitFor(() => evaluate("document.title === '??? � PRP'"));
+  await waitFor(() => evaluate("document.title === 'Ещё · PRP'"));
   await evaluate("document.querySelector('.menu-link').click()");
-  await waitFor(() => evaluate("document.title === '????????? � PRP'"));
+  await waitFor(() => evaluate("document.title === 'Настройки · PRP'"));
   await evaluate("document.querySelector('#theme').value = 'light'; document.querySelector('#theme').dispatchEvent(new Event('change'))");
   assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(243, 245, 247)');
   await evaluate("document.querySelector('#repository').value = 'owner/repo'; document.querySelector('#token').value = 'test-only'");
