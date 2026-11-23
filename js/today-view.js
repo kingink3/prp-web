@@ -244,6 +244,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
     const next = mutate(before);
     if (next === before) return true;
     const version = ++revision;
+    refreshAfterSave ||= Boolean(loading);
     loading = undefined;
     pending = true;
     data = { ...data, [path]: next };
