@@ -1,0 +1,13 @@
+{
+  "date": "2030-01-14",
+  "items": [
+    {
+      "id": "t1",
+      "title": "Old task",
+      "kind": "custom",
+      "done": true,
+      "done_at": "2030-01-14T18:00"
+    }
+  ],
+  "todos": []
+}

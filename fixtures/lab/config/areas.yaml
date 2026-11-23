@@ -1,0 +1,13 @@
+# Top-level directions shown as columns in Lab Console. Edit here or in Console → Направления → ⚙.
+# Objects reference them by `area: <id>`. Without `area`, a default by type applies.
+areas:
+  - {id: learning, title: "Обучение", color: "#2e9e6a"}
+  - {id: projects, title: "Проекты", color: "#4c8bf5"}
+  - {id: ideas, title: "Идеи и тесты", color: "#8a5cd6"}
+  - {id: content, title: "Контент", color: "#c77d1a"}
+  - {id: hobby, title: "Хобби", color: "#d66a8a"}
+defaults:
+  learning: learning
+  project: projects
+  idea: ideas
+  experiment: ideas

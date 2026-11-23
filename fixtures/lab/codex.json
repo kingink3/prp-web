@@ -1,0 +1,21 @@
+{
+  "tasks": [
+    {
+      "id": "cx-1900000003",
+      "title": "Add tests",
+      "text": "Write tests for X.",
+      "done_when": "tests pass",
+      "ref": null,
+      "repo": "<owner>/<data-repo>",
+      "branch": "codex/tests-0003",
+      "model": "MODEL",
+      "effort": "medium",
+      "status": "ready",
+      "pr": null,
+      "fix": null,
+      "note": "",
+      "created": "2030-01-15T09:00",
+      "updated": "2030-01-15T09:00"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "date": "2030-01-15",
+  "budget_minutes": 180,
+  "items": [
+    {
+      "id": "t1",
+      "title": "Read chapter 3",
+      "kind": "learning",
+      "ref": "learning-20300101-sample-course",
+      "minutes": 30
+    },
+    {
+      "id": "t2",
+      "title": "Draft landing copy",
+      "kind": "project",
+      "ref": "project-20300101-sample-app",
+      "minutes": 45,
+      "task": "Draft landing copy"
+    },
+    {
+      "id": "t3",
+      "title": "Buy batteries",
+      "kind": "custom",
+      "done": true,
+      "done_at": "2030-01-15T10:05"
+    },
+    {
+      "id": "t4",
+      "title": "Call the plumber",
+      "kind": "custom",
+      "important": true,
+      "comment": "after 14:00"
+    }
+  ],
+  "postponed": [
+    {
+      "id": "pp-1900000000",
+      "title": "Sort photos",
+      "kind": "custom",
+      "until": "2030-01-16",
+      "postponed_on": "2030-01-15"
+    }
+  ],
+  "ideas": [
+    {
+      "id": "idea-20300115-sample-tool",
+      "title": "Pocket price checker",
+      "pitch": "Scan a barcode, see the cheapest shop nearby.",
+      "purpose": "money",
+      "reaction": null
+    }
+  ]
+}
