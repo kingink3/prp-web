@@ -5,9 +5,75 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="./css/app.css">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="./icons/prp.svg">
+<link rel="apple-touch-icon" href="./icons/prp-180.png">
+<script type="module" src="./js/app.js"></script>
 <title>PRP</title>
 </head>
 <body>
-<p>PRP Web — в разработке.</p>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#today" data-string="appName"></a>
+    <nav class="tabs" data-label="navigation">
+      <a href="#today" data-tab="today" data-string="today"></a>
+      <a href="#directions" data-tab="directions" data-string="directions"></a>
+      <a href="#calendar" data-tab="calendar" data-string="calendar"></a>
+      <a href="#ideas" data-tab="ideas" data-string="ideas"></a>
+      <a href="#more" data-tab="more" data-string="more"></a>
+    </nav>
+  </div>
+</header>
+
+<main class="layout">
+  <p id="expiry-warning" class="notice warning" role="status" hidden></p>
+  <section id="overview" hidden>
+    <h1 id="overview-title"></h1>
+    <p data-string="comingSoon"></p>
+  </section>
+
+  <section id="more-panel" hidden>
+    <h1 data-string="more"></h1>
+    <a class="menu-link" href="#settings" data-string="settings"></a>
+  </section>
+
+  <section id="settings-panel" hidden>
+    <h1 data-string="settings"></h1>
+    <div class="card">
+      <h2 data-string="connection"></h2>
+      <p class="hint" data-string="connectionHint"></p>
+      <form id="settings-form" autocomplete="off">
+        <label class="field" for="repository">
+          <span data-string="repository"></span>
+          <input id="repository" type="text" placeholder="owner/repo" autocapitalize="none" spellcheck="false" required>
+        </label>
+        <label class="field" for="branch">
+          <span data-string="branch"></span>
+          <input id="branch" type="text" placeholder="main" autocapitalize="none" spellcheck="false">
+        </label>
+        <label class="field" for="token">
+          <span data-string="token"></span>
+          <input id="token" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="token-hint">
+        </label>
+        <p class="hint" id="token-hint" data-string="tokenHint"></p>
+        <div class="actions">
+          <button id="check" type="submit" class="primary" data-string="check"></button>
+          <button id="forget" type="button" data-string="forget" disabled></button>
+        </div>
+        <p id="connection-status" class="notice" role="status" hidden></p>
+      </form>
+    </div>
+    <div class="card theme-card">
+      <label for="theme" data-string="theme"></label>
+      <select id="theme">
+        <option value="system" data-string="systemTheme"></option>
+        <option value="light" data-string="lightTheme"></option>
+        <option value="dark" data-string="darkTheme"></option>
+      </select>
+    </div>
+  </section>
+</main>
 </body>
 </html>
