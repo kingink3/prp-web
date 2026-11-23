@@ -30,8 +30,9 @@ const server = createServer(async (request, response) => {
   response.writeHead(404).end();
 });
 
-async function waitFor(fn) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+async function waitFor(fn, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
     const value = await fn();
     if (value) return value;
     await delay(50);
@@ -60,6 +61,8 @@ try {
       return '';
     });
     return info.split('\n')[0];
+  }, 20000).catch(error => {
+    throw new Error(launchLog || error.message, { cause: error });
   });
   const [tab] = await fetch('http://127.0.0.1:' + port + '/json/list').then(response => response.json());
   socket = new WebSocket(tab.webSocketDebuggerUrl);

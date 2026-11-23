@@ -18,4 +18,6 @@ jobs:
         with:
           node-version: 20
       - run: node --test
-      - run: node --experimental-websocket scripts/check-browser.js
+      - name: Check Settings in Chrome
+        timeout-minutes: 2
+        run: node --experimental-websocket scripts/check-browser.js
