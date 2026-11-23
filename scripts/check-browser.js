@@ -139,7 +139,8 @@ try {
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 });
     await send('Page.navigate', { url: url + '?fixtures=1#today' });
     await waitFor(() => evaluate(ready));
-    assert.equal(await evaluate('document.documentElement.scrollWidth === innerWidth'), true);
+    const viewport = await evaluate('({ content: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth })');
+    assert.equal(viewport.content, viewport.viewport, width + ' px viewport has no horizontal page overflow');
     assert.equal(await evaluate("new Set([...document.querySelectorAll('.tabs a')].map(tab => tab.offsetTop)).size"), 1);
     assert.equal(await evaluate("document.querySelector('[data-tab=more]').getBoundingClientRect().right <= innerWidth"), true);
     assert.equal(await evaluate("document.querySelector('.today-count').textContent"), 'Сделано 1/4 · 0/75 мин');
