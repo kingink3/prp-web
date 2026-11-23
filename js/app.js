@@ -117,7 +117,7 @@ function connectionError(error) {
 
 function refreshTokenField() {
   tokenField.placeholder = savedToken ? strings.tokenStored : '';
-  forgetButton.disabled = !savedToken && !tokenField.value && !activeCheck;
+  forgetButton.disabled = fixtureMode || (!savedToken && !tokenField.value && !activeCheck);
 }
 
 function connectionFor(repository, branch, token) {
@@ -129,7 +129,7 @@ function connectionFor(repository, branch, token) {
 
 function updateExpiration(client) {
   const expiration = parseExpiration(client.tokenExpiration);
-  if (expiration === null || expiration === settings.expiration || !savedToken) return;
+  if (client !== connection?.client || expiration === null || expiration === settings.expiration || !savedToken) return;
   settings = { ...settings, expiration };
   showExpiration();
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* Keep the current warning. */ }

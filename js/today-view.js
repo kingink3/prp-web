@@ -123,6 +123,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
   const dialogFields = el('div');
   const dialogActions = el('div', undefined, 'actions');
   const dialogSubmit = el('button', s.save, 'primary');
+  dialogSubmit.type = 'submit';
   const dialogCancel = button(s.cancel, () => {
     dialog.close();
     dialogDismiss?.();
