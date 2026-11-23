@@ -9,11 +9,14 @@ This is a PUBLIC repository. It holds only the code of a static web page.
   Everything the page runs is in this repository.
 - Never insert data from the data repository as HTML (`innerHTML` with data, `insertAdjacentHTML`, template
   strings into `innerHTML`) unless every value passes through the single `esc()` helper. Prefer `textContent`.
-- Never send the token anywhere except `https://api.github.com`. Never log it, never put it in a URL.
+- Never send the GitHub token anywhere except `https://api.github.com`. The only other allowed host is
+  `https://api.anthropic.com` (the owner's routine «instant request»), with its own token. Never log tokens,
+  never put them in a URL.
 
 ## Always
 - Keep the Content-Security-Policy meta tag in `index.html` strict:
   `default-src 'self'; connect-src https://api.github.com; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'`.
+  The one allowed extension: `connect-src https://api.github.com https://api.anthropic.com` (instant request).
   No inline scripts or inline event handlers (CSP forbids them).
 - Token: stored in `localStorage` under one key, entered on a settings screen, with "forget token" button.
   Show a warning when the GitHub API reports the token expires within 7 days
