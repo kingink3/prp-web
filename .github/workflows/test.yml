@@ -18,3 +18,4 @@ jobs:
         with:
           node-version: 20
       - run: node --test
+      - run: node --experimental-websocket scripts/check-browser.js
