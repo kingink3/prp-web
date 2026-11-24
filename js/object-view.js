@@ -417,7 +417,11 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
     const active = scope;
     try {
       current.plan = await readPlan(active);
-      if (current === view) updatePlanButtons();
+      if (current === view) {
+        // ideas of the day come from the plan: draw them once it is loaded
+        if (!current.path && (current.plan?.ideas ?? []).some(idea => !idea.reaction)) render();
+        else updatePlanButtons();
+      }
     } catch {
       if (current !== view) return;
       feedback(s.planLoadError, true);
