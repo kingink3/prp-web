@@ -66,8 +66,13 @@ test('adds, toggles and clears to-dos without clearing newly completed rows on a
   const done = setDone(added, 'todos', id, true, now);
   const oldDone = todo.todos.filter(item => item.done).map(item => item.id);
   assert.equal(setDone(done, 'todos', id, false, now).todos.at(-1).done_at, null);
-  assert.deepEqual(clearDone(done, oldDone).todos.map(item => item.id), [todo.todos[0].id, id]);
-  assert.deepEqual(clearDone(done).todos, todo.todos.slice(0, 1));
+  const visible = list => list.todos.filter(item => !item.hidden).map(item => item.id);
+  assert.deepEqual(visible(clearDone(done, oldDone)), [todo.todos[0].id, id]);
+  assert.deepEqual(visible(clearDone(done)), [todo.todos[0].id]);
+  assert.equal(clearDone(done).todos.length, done.todos.length);  // hidden, not deleted
+  const groups = planGroups(plan, clearDone(done), new Map());
+  assert.equal(groups.tasks.some(row => row.item.id === id), false);
+  assert.equal(planProgress(groups, plan.date, clearDone(done)).done >= 1, true);
 });
 
 test('groups by kind and reference, hides paused and parked cards, and counts planned items', () => {

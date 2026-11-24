@@ -153,10 +153,16 @@ export function addTodo(data, text, at) {
   return { ...data, todos: [...todos, { id: uniqueId(todos, todoId(at)), text, done: false, created: today(at) }] };
 }
 
+// «Убрать выполненные» hides done to-dos (they still count for the day; the data repo prunes them after 7 days).
 export function clearDone(data, ids) {
   const selected = ids && new Set(ids);
-  const todos = data.todos.filter(item => !item.done || (selected && !selected.has(item.id)));
-  return todos.length === data.todos.length ? data : { ...data, todos };
+  let changed = false;
+  const todos = data.todos.map(item => {
+    if (!item.done || item.hidden || (selected && !selected.has(item.id))) return item;
+    changed = true;
+    return { ...item, hidden: true };
+  });
+  return changed ? { ...data, todos } : data;
 }
 
 export function addReminder(data, text, at, repeat, now) {
@@ -216,7 +222,7 @@ export function planGroups(plan, todoList, statuses) {
     const group = item.kind === 'learning' ? 'learning' : path && !path.startsWith('learning/') ? 'projects' : 'tasks';
     groups[group].push({ item, path: planPath, key: 'items' });
   }
-  for (const item of todoList.todos) groups.tasks.push({ item, path: todoPath, key: 'todos' });
+  for (const item of todoList.todos) if (!item.hidden) groups.tasks.push({ item, path: todoPath, key: 'todos' });
   for (const group of Object.values(groups)) group.sort((a, b) => rowRank(a.item) - rowRank(b.item));
   return groups;
 }
@@ -255,9 +261,13 @@ export function nextFocusRow(before, current, after) {
 }
 
 // «Сделано»: plan items + to-dos (open, or done on `day`) by count; minutes only from timers (`spent`).
-export function planProgress(groups, day) {
+export function planProgress(groups, day, todoList) {
   const items = Object.values(groups).flat().filter(row => row.path === planPath ||
     (row.path === todoPath && (!row.item.done || !day || String(row.item.done_at ?? '').startsWith(day)))).map(row => row.item);
+  // hidden («убрать выполненные») to-dos done that day still count
+  for (const item of todoList?.todos ?? []) {
+    if (item.hidden && item.done && (!day || String(item.done_at ?? '').startsWith(day))) items.push(item);
+  }
   const done = items.filter(item => item.done);
   const timed = items.reduce((sum, item) => sum + (Number(item.spent) || 0), 0);
   return { done: done.length, total: items.length, timed };
