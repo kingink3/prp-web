@@ -435,7 +435,8 @@ try {
     source: '(' + mockMore.toString() + ')(' + JSON.stringify(codexFixture) + ')',
   });
   await send('Page.navigate', { url: url + '?more=1#settings' });
-  await waitFor(() => evaluate("!document.querySelector('#settings-panel')?.hidden"));
+  const moreSettingsReady = "location.search === '?more=1' && document.title === 'Настройки · PRP'";
+  await waitFor(() => evaluate(moreSettingsReady));
   assert.equal(await evaluate("document.querySelector('#routine-token').type"), 'password');
   await evaluate(`document.querySelector('#routine-url').value = 'https://api.anthropic.com.evil/fire';
     document.querySelector('#routine-token').value = 'fixture-routine-token'`);
@@ -444,8 +445,10 @@ try {
   await evaluate("document.querySelector('#routine-url').value = 'https://api.anthropic.com/routines/fixture/fire'");
   await click('#routine-save');
   assert.equal(await evaluate("document.querySelector('#routine-token').value"), '');
+  await evaluate('window.waitingForReload = true');
   await send('Page.reload');
-  await waitFor(() => evaluate("document.querySelector('#routine-url')?.value.endsWith('/fixture/fire')"));
+  await waitFor(() => evaluate(moreSettingsReady + " && !window.waitingForReload"));
+  assert.equal(await evaluate("document.querySelector('#routine-url').value.endsWith('/fixture/fire')"), true);
   assert.equal(await evaluate("document.querySelector('#routine-token').value"), '');
   await click('[data-tab=more]');
   await waitFor(() => visible('[data-codex-status=ready]'));
