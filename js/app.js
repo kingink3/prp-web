@@ -131,7 +131,7 @@ function showRoute() {
   measureFixture(route, detail);
   todayPanel.hidden = route !== 'today';
   if (route === 'today') {
-    todayView.show(client, lab);
+    todayView.show(client, lab, fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]));
   } else todayView.hide();
   objectPanel.hidden = route !== 'directions' && route !== 'ideas';
   if (objectPanel.hidden) objectView.hide();

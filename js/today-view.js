@@ -142,6 +142,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
 
   let source;
   let lab;
+  let scope;
   let data;
   let statuses = new Map();
   let ideaPaths = new Map();
@@ -788,12 +789,13 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   panel.addEventListener('touchcancel', () => { pull = undefined; }, { passive: true });
 
   return {
-    show(client, store) {
+    show(client, store, namespace) {
       active = true;
-      if (source !== client || lab !== store) {
+      if (source !== client || lab !== store || scope !== namespace) {
         closeFocus({ restore: false, goBack: false });
         source = client;
         lab = store;
+        scope = namespace;
         data = undefined;
         pending = false;
         loading = undefined;
