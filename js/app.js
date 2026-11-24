@@ -7,6 +7,7 @@ import { createObjectView } from './object-view.js';
 import { createCalendarView } from './calendar-view.js';
 import { createMoreView } from './more-view.js';
 import { isRoutineUrl } from './routine.js';
+import { createLabData } from './lab-data.js';
 import { showNotice } from './work-dom.js';
 
 const SETTINGS_KEY = 'prp.settings';
@@ -66,10 +67,37 @@ let routine = fixtureMode ? {} : readSettings(ROUTINE_KEY);
 let activeCheck;
 let connection;
 const fixtureClient = fixtureMode ? createFixtureClient() : null;
+const fixtureLab = fixtureMode ? createLabData(fixtureClient) : null;
+const fixtureStats = fixtureMode ? document.createElement('p') : null;
+let fixtureMeasure;
+if (fixtureStats) {
+  fixtureStats.id = 'fixture-requests';
+  fixtureStats.className = 'work-muted';
+  fixtureStats.hidden = true;
+  document.querySelector('main').append(fixtureStats);
+}
+
+function measureFixture(route, detail) {
+  if (!fixtureStats) return;
+  const key = route + (detail ? '/' + detail : '');
+  if (fixtureMeasure?.key === key) return;
+  fixtureMeasure = { key, start: fixtureClient.requests };
+  fixtureStats.hidden = true;
+}
+
+function firstRender(route) {
+  if (!fixtureStats || fixtureMeasure?.key !== route || !fixtureStats.hidden) return;
+  const count = fixtureClient.requests - fixtureMeasure.start;
+  fixtureStats.dataset.count = String(count);
+  fixtureStats.textContent = strings.fixtureRequests(count);
+  fixtureStats.hidden = false;
+}
 const todayPanel = byId('today-panel');
-const todayView = createTodayView(todayPanel, { fixture: fixtureMode, onResponse: updateExpiration });
+const todayView = createTodayView(todayPanel, { fixture: fixtureMode, onResponse: updateExpiration,
+  onFirstRender: () => firstRender('today') });
 const objectPanel = byId('objects-panel');
-const objectView = createObjectView(objectPanel, { fixture: fixtureMode, onResponse: updateExpiration });
+const objectView = createObjectView(objectPanel, { fixture: fixtureMode, onResponse: updateExpiration,
+  onFirstRender: firstRender });
 const calendarPanel = byId('calendar-panel');
 const calendarView = createCalendarView(calendarPanel, { fixture: fixtureMode, onResponse: updateExpiration });
 const morePanel = byId('more-panel');
@@ -99,16 +127,18 @@ function showRoute() {
   revealActiveTab();
   const branch = settings.branch || 'main';
   const client = fixtureClient || (connected ? connectionFor(settings.repository, branch, savedToken) : null);
+  const lab = fixtureLab ?? (client && connection.lab);
+  measureFixture(route, detail);
   todayPanel.hidden = route !== 'today';
   if (route === 'today') {
-    todayView.show(client, fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]));
+    todayView.show(client, lab, fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]));
   } else todayView.hide();
   objectPanel.hidden = route !== 'directions' && route !== 'ideas';
   if (objectPanel.hidden) objectView.hide();
   else {
     let path = detail;
     try { if (detail) path = decodeURIComponent(detail); } catch { /* Show an unavailable card. */ }
-    objectView.show(client, route, path);
+    objectView.show(client, lab, route, path);
   }
   calendarPanel.hidden = route !== 'calendar';
   if (calendarPanel.hidden) calendarView.hide();
@@ -165,7 +195,9 @@ function refreshTokenField() {
 
 function connectionFor(repository, branch, token) {
   if (connection?.repository !== repository || connection.branch !== branch || connection.token !== token) {
-    connection = { repository, branch, token, client: createGitHubClient({ repository, branch, token }) };
+    const client = createGitHubClient({ repository, branch, token });
+    const lab = createLabData(client, { namespace: JSON.stringify([repository.toLowerCase(), branch]) });
+    connection = { repository, branch, token, client, lab };
   }
   return connection.client;
 }
@@ -227,6 +259,7 @@ function finishCheck() {
 
 function forgetToken() {
   activeCheck?.abort();
+  connection?.lab.clear();
   connection = undefined;
   savedToken = null;
   tokenField.value = '';

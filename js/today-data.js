@@ -66,6 +66,17 @@ export function addObjectToPlan(data, card, at) {
   }] };
 }
 
+export const ideaInPlan = (plan, id) => (plan.items ?? []).some(item => item.ref === id && !item.done);
+
+export function addIdeaToPlan(plan, card, at) {
+  if (ideaInPlan(plan, card.id)) return plan;
+  const items = plan.items ?? [];
+  const id = uniqueId([...items, ...(plan.postponed ?? [])], 'p-' + Math.floor(at.getTime() / 1000));
+  return { ...plan, items: [...items, {
+    id, title: card.title, kind: 'idea', ref: card.id, minutes: 25, done: false, done_at: null,
+  }] };
+}
+
 export function editDailyIdea(data, idea, patch) {
   const ideas = data.ideas ?? [];
   const index = ideas.findIndex(entry => (entry.id ?? entry.ref) === (idea.id ?? idea.ref));

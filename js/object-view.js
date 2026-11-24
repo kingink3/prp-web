@@ -1,17 +1,21 @@
 import { bodySections } from './frontmatter.js';
-import { editChecklist, editStatus, loadObjects, objectCard, objectTypes, parseAreas, saveObjectEdit,
-  statusOptions, taskReference } from './objects.js';
+import { ideaFilterStatuses, ideaList, ideaStatus } from './ideas.js';
+import { areasPath } from './lab-data.js';
+import { editChecklist, editIdeaComment, editStatus, isObjectPath, objectCard, objectList, parseAreas,
+  saveObjectEdit, statusOptions, taskReference } from './objects.js';
 import { strings } from './strings.js';
-import { addObjectToPlan, editDailyIdea, planPath } from './today-data.js';
+import { addIdeaToPlan, addObjectToPlan, ideaInPlan, planPath } from './today-data.js';
 import { today } from './util.js';
 import { appendLinkedText, button, el, link } from './work-dom.js';
 
 const s = strings.work;
 const objectHref = (route, path) => '#' + route + '/' + encodeURIComponent(path);
-const statusLabel = status => Object.hasOwn(s.status, status) ? s.status[status] : status;
+function statusLabel(status, type) {
+  const labels = type === 'idea' ? s.ideaStatuses : s.status;
+  const key = type === 'idea' ? ideaStatus(status) : status;
+  return Object.hasOwn(labels, key) ? labels[key] : status;
+}
 const planJson = value => JSON.stringify(value, null, 2) + '\n';
-const ideaStatuses = ['new', 'liked', 'testing', 'parked', 'done', 'killed'];
-const ideaReaction = value => Object.keys(s.reactions).find(key => key === value || s.reactions[key][0] === value);
 
 function textBlock(value) {
   const node = el('p', undefined, 'work-text');
@@ -22,7 +26,7 @@ function textBlock(value) {
 function renderCard(card, route) {
   const anchor = link('', objectHref(route, card.path), 'work-card work-object');
   const head = el('div', undefined, 'work-card-head');
-  const badge = el('span', statusLabel(card.status), 'badge');
+  const badge = el('span', statusLabel(card.status, card.type), 'badge');
   if (card.status) badge.dataset.status = card.status;
   head.append(el('strong', card.title), badge);
   anchor.append(head);
@@ -42,7 +46,7 @@ function renderCard(card, route) {
   return anchor;
 }
 
-export function createObjectView(panel, { fixture, onResponse }) {
+export function createObjectView(panel, { fixture, onResponse, onFirstRender }) {
   const heading = el('h1');
   const notice = el('div', undefined, 'work-notice');
   notice.setAttribute('role', 'status');
@@ -51,6 +55,9 @@ export function createObjectView(panel, { fixture, onResponse }) {
   let scope;
   let view;
   let selectedArea;
+  let ideaArea;
+  let ideaFilter;
+  let ideaDrafts;
 
   function feedback(text, isError = false) {
     notice.replaceChildren(text ?? '');
@@ -105,7 +112,7 @@ export function createObjectView(panel, { fixture, onResponse }) {
   }
 
   async function readPlan(active) {
-    return JSON.parse((await active.client.getFile(planPath)).text);
+    return JSON.parse((await active.lab.refresh(planPath)).text);
   }
 
   async function writePlan(active, expectedDay, change, commit) {
@@ -115,47 +122,96 @@ export function createObjectView(panel, { fixture, onResponse }) {
       const updated = change(plan);
       return updated === plan ? input : planJson(updated);
     }, 'lab: web — ' + commit);
+    active.lab.remember(planPath, result);
     return JSON.parse(result.text);
+  }
+
+
+  function displayList(current, entries, configText) {
+    const date = fixture ? '2030-01-15' : today();
+    current.config = parseAreas(configText);
+    current.date = date;
+    current.cards = objectList(entries, current.config, date);
+    render();
+    onFirstRender(current.route);
+    if (current.route === 'ideas' && !current.planScheduled) {
+      current.planScheduled = true;
+      // Read the plan after the catalog has had a frame to paint.
+      requestAnimationFrame(() => requestAnimationFrame(() => loadIdeaPlan(current)));
+    }
   }
 
   async function load(current) {
     const active = scope;
-    feedback(s.loading);
-    content.replaceChildren();
+    const { client, lab } = active;
+    const cachedConfig = lab.peek(areasPath)?.text ?? '';
+    const entries = !current.path && lab.peekObjects();
+    if (current.route === 'ideas') {
+      const cachedPlan = lab.peek(planPath);
+      current.plan = cachedPlan ? JSON.parse(cachedPlan.text) : undefined;
+    }
+    if (entries) {
+      displayList(current, entries, cachedConfig);
+      feedback();
+    } else {
+      content.replaceChildren();
+      feedback(s.loading);
+    }
     try {
       await active.pending?.catch(() => {});
       if (current !== view) return;
-      const { client } = active;
-      const configFile = current.route === 'ideas' ? null : client.getFile('config/areas.yaml').catch(error => {
-        if (error.status === 404) return null;
-        throw error;
-      });
-      const [plan, configSource] = await Promise.all([current.route === 'ideas' || fixture ? readPlan(active) : null, configFile]);
-      const config = parseAreas(configSource?.text ?? '');
-      const date = fixture ? plan.date : today();
-      const folders = current.route === 'ideas' ? ['ideas'] : Object.keys(objectTypes);
-      const cards = await loadObjects(client, folders, config, date);
-      if (current !== view) return;
-      Object.assign(current, { cards, config, date, plan });
-      render();
+      if (current.path && !isObjectPath(current.path)) {
+        render();
+        feedback();
+        return;
+      }
+      const config = lab.refresh(areasPath, '');
+      if (current.path) {
+        const file = client.getFile(current.path).catch(error => {
+          if (error.status === 404) return null;
+          throw error;
+        });
+        const [areaFile, detail] = await Promise.all([config, file]);
+        if (current !== view) return;
+        current.config = parseAreas(areaFile.text);
+        current.date = fixture ? '2030-01-15' : today();
+        current.detail = detail && objectCard(current.path, detail.text, current.config, current.date);
+        render();
+      } else {
+        const [areaFile, updated] = await Promise.all([config, lab.refreshObjects()]);
+        await active.pending?.catch(() => {});
+        if (current !== view) return;
+        const latest = lab.peekObjects() ?? updated;
+        if (!entries || areaFile.text !== cachedConfig || JSON.stringify(latest) !== JSON.stringify(entries)) {
+          displayList(current, latest, areaFile.text);
+        }
+      }
       feedback();
     } catch {
       if (current !== view) return;
-      content.replaceChildren(el('p', s.loadError), button(s.retry, () => load(current)));
-      feedback();
+      const retry = button(s.retry, () => load(current));
+      if (entries) {
+        feedback(s.loadError, true);
+        notice.append(' ', retry);
+      } else {
+        content.replaceChildren(el('p', s.loadError), retry);
+        feedback();
+      }
     } finally {
-      onResponse(active.client);
+      onResponse(client);
     }
   }
 
-  function updateCard(card, mutate, description, commit, onFailure) {
+  function updateCard(card, mutate, description, commit, onSuccess, onFailure) {
     const current = view;
     transact(async active => {
       const at = fixture ? new Date(current.date + 'T10:30') : new Date();
       const result = await saveObjectEdit(active.client, card, mutate, { at, description, commit });
       active.journal = result.saveJournal;
-      current.cards = current.cards.map(entry => entry.path === card.path
-        ? objectCard(card.path, result.text, current.config, current.date) : entry).filter(Boolean);
+      active.lab.patchObject(card.path, result.text);
+      if (current.path) current.detail = objectCard(card.path, result.text, current.config, current.date);
+      else current.cards = objectList(active.lab.peekObjects(), current.config, current.date);
+      onSuccess?.();
     }, s.saved, onFailure);
   }
 
@@ -192,7 +248,7 @@ export function createObjectView(panel, { fixture, onResponse }) {
     const details = el('dl');
     for (const [key, value] of Object.entries(card.attributes)) {
       const label = Object.hasOwn(s.field, key) ? s.field[key] : key;
-      const display = key === 'status' ? statusLabel(value)
+      const display = key === 'status' ? statusLabel(value, card.type)
         : key === 'type' ? s.type[card.type]
           : key === 'area' ? view.config.areas.find(area => area.id === value)?.title ?? value
             : Array.isArray(value) ? value.join('\n') : value;
@@ -256,7 +312,7 @@ export function createObjectView(panel, { fixture, onResponse }) {
     const back = link(s.back, '#' + view.route, 'btn work-back');
     if (!card) return [back, el('p', s.noObject)];
     const summary = el('section', undefined, 'work-card');
-    summary.append(el('p', s.type[card.type] + ' · ' + (statusLabel(card.status) ?? ''), 'work-muted'));
+    summary.append(el('p', s.type[card.type] + ' · ' + (statusLabel(card.status, card.type) ?? ''), 'work-muted'));
     if (card.nextStep) summary.append(el('h2', s.nextStep), textBlock(card.nextStep));
     const actions = el('div', undefined, 'actions');
     const statuses = mutable(el('select'));
@@ -264,7 +320,7 @@ export function createObjectView(panel, { fixture, onResponse }) {
     const choices = statusOptions[card.type];
     const options = choices.includes(card.status) ? choices : [card.status ?? '', ...choices];
     for (const status of options) {
-      const option = el('option', statusLabel(status));
+      const option = el('option', statusLabel(status, card.type));
       option.value = status;
       option.disabled = !choices.includes(status);
       statuses.append(option);
@@ -273,12 +329,12 @@ export function createObjectView(panel, { fixture, onResponse }) {
     statuses.addEventListener('change', () => {
       const next = statuses.value;
       updateCard(card, (text, date) => editStatus(text, card.type, next, date),
-        s.setStatus + ': ' + statusLabel(next), 'object status', () => { statuses.value = card.status ?? ''; });
+        s.setStatus + ': ' + statusLabel(next, card.type), 'object status', undefined, () => { statuses.value = card.status ?? ''; });
     });
     const add = mutable(button(s.addToPlan, () => transact(async active => {
       const plan = await readPlan(active);
       const at = fixture ? new Date(plan.date + 'T10:30') : new Date();
-      await writePlan(active, plan.date, data => addObjectToPlan(data, card, at), 'add object to plan');
+      await writePlan(active, plan.date, data => card.type === 'idea' ? addIdeaToPlan(data, card, at) : addObjectToPlan(data, card, at), 'add object to plan');
     }, s.addedToPlan), 'primary'));
     actions.append(statuses, add);
     summary.append(actions);
@@ -292,97 +348,150 @@ export function createObjectView(panel, { fixture, onResponse }) {
     return [back, summary, ...(card.type === 'project' ? [renderTasks(card)] : []), detailFields(card), ...sections];
   }
 
-  function renderIdea(idea) {
+
+  function renderIdea(card) {
     const current = view;
-    const card = current.cards.find(entry => entry.id === (idea.id ?? idea.ref));
     const row = el('article', undefined, 'work-card work-idea');
-    const title = idea.title ?? card?.title ?? idea.id ?? idea.ref;
-    const heading = el('h3');
-    heading.append(card ? link(title, objectHref('ideas', card.path)) : title);
-    row.append(heading);
-    if (idea.pitch) row.append(textBlock(idea.pitch));
-    const form = el('form', undefined, 'work-comment');
-    const comment = mutable(el('textarea'));
-    comment.rows = 2;
-    comment.value = idea.comment ?? '';
-    comment.setAttribute('aria-label', s.ownerComment);
-    comment.placeholder = s.ownerComment;
-    const save = (patch, commit) => transact(async active => {
-      current.plan = await writePlan(active, current.plan.date, plan => editDailyIdea(plan, idea, patch), commit);
-      if (Object.hasOwn(patch, 'comment')) current.drafts.delete(idea.id ?? idea.ref);
-    });
-    const reactions = el('div', undefined, 'actions work-reactions');
-    for (const [id, [icon, label]] of Object.entries(s.reactions)) {
-      const selected = ideaReaction(idea.reaction) === id;
-      const react = mutable(button(icon, () => save({ reaction: selected ? null : id }, 'idea reaction')));
+    const title = el('h3');
+    title.append(link(card.title, objectHref('ideas', card.path)));
+    const { purpose, origin, main_risk: risk } = card.attributes;
+    const status = ideaStatus(card.status);
+    const area = current.config.areas.find(item => item.id === card.area);
+    const meta = [
+      Object.hasOwn(s.purpose, purpose) ? s.purpose[purpose] : purpose,
+      area?.title ?? card.area, statusLabel(status, 'idea'), origin === 'agent' ? s.origin.agent : s.origin.owner,
+    ].filter(Boolean);
+    row.append(title, el('p', meta.join(' · '), 'work-muted idea-meta'));
+    if (risk) row.append(el('p', s.ideaRisk(risk), 'idea-risk'));
+
+    const actions = el('div', undefined, 'idea-actions');
+    const reactions = el('div', undefined, 'work-reactions idea-reactions');
+    for (const [value, icon, label] of s.ideaActions) {
+      const react = mutable(button(icon, () => {
+        const atStatus = statusLabel(value, 'idea');
+        updateCard(card, (text, date) => editStatus(text, 'idea', value, date),
+          s.setStatus + ': ' + atStatus, 'idea status');
+      }));
       react.setAttribute('aria-label', label);
-      react.setAttribute('aria-pressed', String(selected));
+      react.setAttribute('aria-pressed', String(status === value));
       reactions.append(react);
     }
-    const key = idea.id ?? idea.ref;
-    if (current.drafts.has(key)) comment.value = current.drafts.get(key);
-    comment.addEventListener('input', () => current.drafts.set(key, comment.value));
-    const submit = mutable(el('button', s.saveComment));
-    submit.type = 'submit';
+
+    const form = el('form', undefined, 'idea-edit');
+    const input = mutable(el('input'));
+    input.placeholder = s.ideaEdit;
+    input.setAttribute('aria-label', s.ideaEdit);
+    input.value = ideaDrafts.get(card.id) ?? '';
+    input.addEventListener('input', () => ideaDrafts.set(card.id, input.value));
+    form.append(input);
     form.addEventListener('submit', event => {
       event.preventDefault();
-      if (submit.disabled) return;
-      save({ comment: comment.value.trim() }, 'idea comment');
+      const comment = input.value.trim();
+      const drafts = ideaDrafts;
+      if (!comment || input.disabled) return;
+      updateCard(card, (text, date) => editIdeaComment(text, comment, date), s.ideaEdited, 'idea comment',
+        () => drafts.delete(card.id));
     });
-    form.append(comment, submit);
-    row.append(reactions, form);
+
+    const planButton = mutable(button(s.ideaAdd, () => transact(async active => {
+      const at = fixture ? new Date(current.plan.date + 'T10:30') : new Date();
+      current.plan = await writePlan(active, current.plan.date, plan => addIdeaToPlan(plan, card, at), 'add idea to plan');
+    }, s.addedToPlan), 'btn small idea-plan'));
+    planButton.dataset.ref = card.id;
+    actions.append(reactions, form, planButton);
+    row.append(actions);
     return row;
   }
 
-  function renderIdeas() {
-    const daily = el('section', undefined, 'work-group');
-    daily.append(el('h2', s.dailyIdeas));
-    const ideas = view.plan.ideas ?? [];
-    daily.append(...(ideas.length ? ideas.map(renderIdea) : [el('p', s.noDailyIdeas, 'work-muted')]));
-    const all = el('section', undefined, 'work-group');
-    all.append(el('h2', s.allIdeas));
-    for (const status of new Set([...ideaStatuses, ...view.cards.map(card => card.status)])) {
-      const cards = view.cards.filter(card => card.status === status);
-      if (!cards.length) continue;
-      const group = el('section', undefined, 'work-group');
-      const grid = el('div', undefined, 'work-grid');
-      grid.append(...cards.map(card => renderCard(card, 'ideas')));
-      group.append(el('h3', statusLabel(status)), grid);
-      all.append(group);
+  function updatePlanButtons() {
+    for (const control of content.querySelectorAll('.idea-plan')) {
+      const planned = view.plan && ideaInPlan(view.plan, control.dataset.ref);
+      control.textContent = planned ? s.ideaInPlan : s.ideaAdd;
+      control.dataset.disabled = String(!view.plan || Boolean(planned));
     }
-    if (!view.cards.length) all.append(el('p', s.noIdeas, 'work-muted'));
-    return [daily, all];
-  }
-
-  function render() {
-    const card = view.path && view.cards.find(entry => entry.path === view.path);
-    heading.textContent = card?.title ?? strings[view.route];
-    content.replaceChildren(...(view.path ? renderDetail(card) : view.route === 'ideas' ? renderIdeas() : renderBoard()));
     setBusy();
   }
 
+  async function loadIdeaPlan(current) {
+    if (current !== view) return;
+    const active = scope;
+    try {
+      current.plan = await readPlan(active);
+      if (current === view) updatePlanButtons();
+    } catch {
+      if (current !== view) return;
+      feedback(s.planLoadError, true);
+      notice.append(' ', button(s.retry, () => {
+        feedback();
+        loadIdeaPlan(current);
+      }));
+    } finally {
+      onResponse(active.client);
+    }
+  }
+
+  function renderIdeas() {
+    const { counts, visible } = ideaList(view.cards, ideaArea, ideaFilter);
+    const filters = el('div', undefined, 'idea-filters');
+    const tabs = el('nav', undefined, 'work-tabs');
+    tabs.setAttribute('aria-label', s.ideaFilters);
+    for (const status of ideaFilterStatuses) {
+      const label = (status === 'killed' ? '✕ ' : '') + s.ideaStatuses[status];
+      const pill = button(label + ' (' + counts[status] + ')', () => {
+        ideaFilter = status;
+        render();
+        content.querySelector('.idea-filters [aria-current]').focus();
+      });
+      pill.dataset.status = status;
+      if (status === ideaFilter) pill.setAttribute('aria-current', 'true');
+      tabs.append(pill);
+    }
+    const select = el('select');
+    select.setAttribute('aria-label', s.areaFilter);
+    for (const { id, title } of [{ id: '', title: s.allAreas }, ...view.config.areas]) {
+      const option = el('option', title);
+      option.value = id;
+      select.append(option);
+    }
+    select.value = ideaArea;
+    select.addEventListener('change', () => {
+      ideaArea = select.value;
+      render();
+      content.querySelector('.idea-filters select').focus();
+    });
+    filters.append(tabs, select);
+    const cards = el('div', undefined, 'work-group idea-list');
+    cards.append(...(visible.length ? visible.map(renderIdea) : [el('p', s.noIdeas, 'work-muted')]));
+    return [filters, cards];
+  }
+
+  function render() {
+    const card = view.detail;
+    heading.textContent = card?.title ?? strings[view.route];
+    if (!view.path && view.route === 'ideas' && !view.config.areas.some(area => area.id === ideaArea)) ideaArea = '';
+    content.replaceChildren(...(view.path ? renderDetail(card) : view.route === 'ideas' ? renderIdeas() : renderBoard()));
+    updatePlanButtons();
+  }
+
   return {
-    show(client, route, path) {
+    show(client, lab, route, path) {
       if (scope?.client !== client) {
-        scope = { client };
+        scope = { client, lab };
         selectedArea = undefined;
+        ideaArea = '';
+        ideaFilter = 'all';
+        ideaDrafts = new Map();
         view = undefined;
       }
       if (view?.route === route && view.path === path) return;
-      if (view?.route === route && view.cards) {
-        view.path = path;
-        feedback();
-        render();
-        window.scrollTo(0, 0);
-        return;
-      }
-      view = { route, path, drafts: new Map() };
+      const current = view = { route, path };
       heading.textContent = strings[route];
-      if (client) load(view);
+      if (client) load(current);
       else {
         feedback();
         content.replaceChildren(link(strings.settings, '#settings'));
       }
+      window.scrollTo(0, 0);
     },
     hide() { view = undefined; },
   };

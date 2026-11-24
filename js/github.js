@@ -44,7 +44,7 @@ export function createGitHubClient({ repository, token, branch = 'main', fetchIm
     return url.href;
   }
 
-  async function request(path, { method = 'GET', body, signal } = {}) {
+  async function request(path, { method = 'GET', body, signal, cachedFile, withEtag } = {}) {
     const url = contentsUrl(path, method);
     const cached = method === 'GET' && cache.get(path);
     const headers = {
@@ -52,7 +52,8 @@ export function createGitHubClient({ repository, token, branch = 'main', fetchIm
       Authorization: `Bearer ${token}`,
       'X-GitHub-Api-Version': '2022-11-28',
     };
-    if (cached) headers['If-None-Match'] = cached.etag;
+    const etagSent = cachedFile?.etag ?? cached?.etag;
+    if (etagSent) headers['If-None-Match'] = etagSent;
     if (body) headers['Content-Type'] = 'application/json';
 
     const response = await fetchImpl(url, {
@@ -60,7 +61,10 @@ export function createGitHubClient({ repository, token, branch = 'main', fetchIm
     });
     const expiration = response.headers.get('github-authentication-token-expiration');
     if (expiration !== null) tokenExpiration = expiration;
-    if (response.status === 304 && cached) return cached.data;
+    if (response.status === 304 && etagSent) {
+      if (cachedFile?.etag === etagSent) return null; // Reuse the persisted decoded file.
+      return withEtag ? { data: cached.data, etag: cached.etag } : cached.data;
+    }
     if (!response.ok) {
       if (method === 'GET' && response.status === 404) cache.delete(path);
       throw new GitHubError(response.status, response.status === 429 || (
@@ -69,21 +73,25 @@ export function createGitHubClient({ repository, token, branch = 'main', fetchIm
       ));
     }
     const data = await response.json();
+    const etag = response.headers.get('etag');
     if (method === 'GET') {
-      const etag = response.headers.get('etag');
       if (etag) cache.set(path, { etag, data });
       else cache.delete(path);
     }
-    return data;
+    return withEtag ? { data, etag } : data;
   }
 
-  async function getFile(path, { signal } = {}) {
-    const file = await request(path, { signal });
+  async function getFile(path, { signal, cached, withEtag = false } = {}) {
+    const result = await request(path, { signal, cachedFile: withEtag ? cached : undefined, withEtag });
+    if (withEtag && result === null) return cached;
+    const file = withEtag ? result.data : result;
     if (file?.type !== 'file' || file.encoding !== 'base64' ||
         typeof file.content !== 'string' || typeof file.sha !== 'string') {
       throw new Error('Expected a base64-encoded GitHub file');
     }
-    return { text: decodeBase64(file.content), sha: file.sha };
+    const decoded = { text: decodeBase64(file.content), sha: file.sha };
+    if (withEtag && result.etag) decoded.etag = result.etag;
+    return decoded;
   }
 
   async function listDir(path = '') {
