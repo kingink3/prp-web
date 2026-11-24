@@ -1,34 +1,16 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { extname, join } from 'node:path';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { createFixtureServer } from './serve.js';
 
 const root = new URL('../', import.meta.url);
 const profile = await mkdtemp(join(tmpdir(), 'prp-browser-'));
-const contentTypes = {
-  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png',
-};
 const prefix = '/prp-web/';
-const server = createServer(async (request, response) => {
-  const path = request.url.startsWith(prefix) ? request.url.slice(prefix.length) || 'index.html' : '';
-  const allowed = /^(?:index\.html|manifest\.webmanifest|(?:css|js|icons)\/[\w.-]+)$/.test(path);
-  const type = contentTypes[extname(path)];
-  if (allowed && type) {
-    try {
-      const data = await readFile(new URL(path, root));
-      response.writeHead(200, { 'Content-Type': type }).end(data);
-      return;
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-  }
-  response.writeHead(404).end();
-});
+const server = createFixtureServer(prefix);
 
 async function waitFor(fn, timeout = 5000) {
   const deadline = Date.now() + timeout;
@@ -148,7 +130,172 @@ try {
     assert.equal(await evaluate('document.documentElement.scrollWidth === innerWidth'), true);
   }
   assert.deepEqual(errors, []);
-  console.log('Browser Settings smoke test passed');
+
+  const url = 'http://127.0.0.1:' + server.address().port + prefix;
+  const ready = "document.querySelector('[data-id=t4]') && !document.querySelector('.today-timer .today-time').disabled";
+  const screenshots = process.env.PRP_SCREENSHOTS;
+  if (screenshots) await mkdir(screenshots, { recursive: true });
+  for (const [width, height] of [[390, 844], [1024, 900]]) {
+    await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 });
+    await send('Page.navigate', { url: url + '?fixtures=1#today' });
+    await waitFor(() => evaluate(ready));
+    const viewport = await evaluate('({ content: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth })');
+    assert.equal(viewport.content, viewport.viewport, width + ' px viewport has no horizontal page overflow');
+    assert.equal(await evaluate("new Set([...document.querySelectorAll('.tabs a')].map(tab => tab.offsetTop)).size"), 1);
+    assert.equal(await evaluate("document.querySelector('[data-tab=more]').getBoundingClientRect().right <= innerWidth"), true);
+    assert.equal(await evaluate("document.querySelector('.today-count').textContent"), 'Сделано 1/4 · 0/75 мин');
+    assert.equal(await evaluate("document.body.textContent.includes('позже: 1')"), true);
+    assert.equal(await evaluate("document.querySelector('[data-id=t4] .today-star').textContent"), '★');
+    assert.equal(await evaluate('window.lastGitHubRequest'), undefined);
+    if (screenshots) {
+      const { cssContentSize } = await send('Page.getLayoutMetrics');
+      const { data } = await send('Page.captureScreenshot', {
+        format: 'png', fromSurface: true, captureBeyondViewport: true,
+        clip: { x: 0, y: 0, width, height: Math.max(height, cssContentSize.height), scale: 1 },
+      });
+      await writeFile(join(screenshots, 'today-' + width + '.png'), Buffer.from(data, 'base64'));
+    }
+  }
+
+  const click = async selector => {
+    const expression = 'document.querySelector(' + JSON.stringify(selector) + ')?.click()';
+    await evaluate(expression);
+  };
+  const visible = selector => evaluate('Boolean(document.querySelector(' + JSON.stringify(selector) + '))');
+  const idle = () => waitFor(() => evaluate("document.querySelector('.today-grid')?.getAttribute('aria-busy') === 'false'"));
+  async function menu(id, text) {
+    const row = '[data-id="' + id + '"]';
+    await click(row + ' summary');
+    await evaluate('[...document.querySelectorAll(' + JSON.stringify(row + ' .today-menu button') +
+      ')].find(button => button.textContent === ' + JSON.stringify(text) + ').click()');
+  }
+
+  await click('[data-id=t4] .today-check');
+  await idle();
+  assert.equal(await visible('[data-id=t4].is-done'), true);
+  await click('[data-id=t4] .today-check');
+  await idle();
+  await menu('t4', 'Комментарий / блокер');
+  await evaluate("document.querySelector('textarea').value = '<b>Fixture note</b>'");
+  await click('dialog button[type=submit], dialog .primary');
+  await idle();
+  assert.equal(await evaluate("document.querySelector('[data-id=t4]').textContent.includes('<b>Fixture note</b>')"), true);
+  assert.equal(await visible('[data-id=t4] b'), false);
+  await menu('t4', '→ Завтра');
+  await idle();
+  assert.equal(await visible('[data-id=t4]'), false);
+  await click('.today-column details.today-card > summary');
+  assert.equal(await evaluate("document.querySelector('.today-postponed').textContent.includes('Sort photos')"), true);
+  await evaluate("[...document.querySelectorAll('.today-postponed button')].at(-1).click()");
+  await idle();
+  assert.equal(await evaluate("document.querySelector('.today-rows').textContent.includes('Call the plumber')"), true);
+
+  await evaluate("document.querySelector('.todo-form input').value = 'Browser fixture to-do'");
+  await click('.todo-form button[type=submit]');
+  await idle();
+  const todoSelector = '[data-path="todo.json"]:not(.is-done)';
+  assert.equal(await evaluate("document.querySelectorAll(" + JSON.stringify(todoSelector) + ").length"), 2);
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  const points = await evaluate("[...document.querySelectorAll(" + JSON.stringify(todoSelector + " .today-drag") +
+    ")].map(button => { const r = button.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })");
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points[1]] });
+  await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [points[0]] });
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await idle();
+  assert.equal(await evaluate("document.querySelector(" + JSON.stringify(todoSelector) + ").textContent.includes('Browser fixture to-do')"), true);
+  const importantPoint = await evaluate("(() => { const r = document.querySelector('[data-path=\"todo.json\"] .today-row-title').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()");
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [importantPoint] });
+  await delay(600);
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await idle();
+  assert.equal(await visible('[data-path="todo.json"] .today-star'), true);
+  await click('.todo-form + button');
+  await idle();
+  assert.equal(await visible('[data-path="todo.json"].is-done'), false);
+
+  await click('.today-reminder-actions button:first-child');
+  await idle();
+  assert.equal(await evaluate("document.querySelector('.today-reminder').textContent.includes('10:40')"), true);
+  await click('.today-reminder > .today-check');
+  await idle();
+  assert.equal(await evaluate("document.querySelector('.today-muted:last-of-type') !== null && !document.querySelector('.today-reminder')"), true);
+  await evaluate("document.querySelector('.reminder-form input').value = 'One-off browser reminder'");
+  await click('.reminder-form button[type=submit]');
+  await idle();
+  assert.equal(await evaluate("document.querySelector('.today-reminder').textContent.includes('One-off browser reminder')"), true);
+
+  await click('[data-id=t1] .today-time');
+  await evaluate("document.querySelector('dialog input').value = '1'");
+  await click('dialog .primary');
+  await evaluate("window.chimes = 0; const oscillator = AudioContext.prototype.createOscillator; AudioContext.prototype.createOscillator = function () { window.chimes++; return oscillator.call(this); }");
+  const startPoint = await evaluate("(() => { const button = document.querySelector('[data-id=t1] .today-timer .today-icon'); button.scrollIntoView({ block: 'center' }); const r = button.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()");
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [startPoint] });
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await waitFor(() => evaluate("document.querySelector('[data-id=t1] .today-timer .today-icon').textContent === '■'"));
+  await evaluate("const realNow = Date.now; Date.now = () => realNow() + 61_000");
+  await waitFor(() => evaluate("document.querySelector('dialog[open] h2')?.textContent === 'Отметить выполненным?'"));
+  assert.equal(await evaluate('window.chimes'), 1);
+  await click('dialog .primary');
+  await idle();
+  assert.equal(await visible('[data-id=t1].is-done'), true);
+  await click('.today-heading button');
+  await idle();
+  assert.equal(await visible('[data-id=t1].is-done'), true);
+  assert.equal(await evaluate("window.lastGitHubRequest === undefined && localStorage.getItem('prp.timers') === null"), true);
+  await send('Page.reload');
+  await waitFor(() => evaluate(ready));
+  assert.equal(await visible('[data-id=t1].is-done'), false);
+
+  // Mock real API writes to verify optimistic rendering and rollback without a token or network.
+  const files = {};
+  for (const file of ['today.json', 'todo.json', 'reminders.json',
+    'learning/learning-20300101-sample-course.md', 'projects/project-20300101-sample-app.md']) {
+    files[file] = await readFile(new URL('fixtures/lab/' + file, root), 'base64');
+  }
+  const mockWrites = files => {
+    if (location.search !== '?rollback=1') return;
+    localStorage.setItem('prp.settings', JSON.stringify({ repository: 'owner/repo', branch: 'main' }));
+    localStorage.setItem('prp.githubToken', 'test-only');
+    window.getCount = 0;
+    window.puts = [];
+    window.fetch = async (url, options) => {
+      if (options.method === 'PUT') {
+        window.puts.push(JSON.parse(options.body));
+        return new Promise(resolve => {
+          window.finishWrite = ok => resolve(ok ? Response.json({ content: { sha: 'new' } }) : new Response(null, { status: 500 }));
+        });
+      }
+      window.getCount++;
+      const name = new URL(url).pathname.split('/contents/')[1];
+      if (!(name in files)) return new Response(null, { status: 404 });
+      return Response.json({ type: 'file', encoding: 'base64', content: files[name], sha: 'before' });
+    };
+  };
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: '(' + mockWrites.toString() + ')(' + JSON.stringify(files) + ')' });
+  await send('Page.navigate', { url: url + '?rollback=1#today' });
+  await waitFor(() => evaluate(ready));
+  await click('[data-id=t1] .today-check');
+  await waitFor(() => evaluate("window.puts.length === 1"));
+  assert.equal(await visible('[data-id=t1].is-done'), true);
+  assert.equal(await evaluate("window.puts[0].message"), 'lab: web — complete item');
+  assert.equal(await evaluate("window.puts[0].sha"), 'before');
+  await evaluate('window.finishWrite(false)');
+  await idle();
+  assert.equal(await visible('[data-id=t1].is-done'), false);
+  assert.equal(await visible('.today-toast.error:not([hidden])'), true);
+  await evaluate("window.beforeRefresh = window.getCount; document.dispatchEvent(new Event('visibilitychange'))");
+  await waitFor(() => evaluate('window.getCount > window.beforeRefresh'));
+  await idle();
+  await evaluate("window.scrollTo(0, 0); window.beforeRefresh = window.getCount");
+  const pullPoint = await evaluate("(() => { const r = document.querySelector('.today-heading h1').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()");
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [pullPoint] });
+  await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...pullPoint, y: pullPoint.y + 100 }] });
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await waitFor(() => evaluate('window.getCount > window.beforeRefresh'));
+  await idle();
+  assert.deepEqual(errors, []);
+  console.log('Browser Today and Settings checks passed');
 } finally {
   socket?.close();
   if (chrome.pid && chrome.exitCode === null) {

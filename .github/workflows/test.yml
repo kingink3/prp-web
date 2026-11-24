@@ -18,6 +18,16 @@ jobs:
         with:
           node-version: 20
       - run: node --test
-      - name: Check Settings in Chrome
+      - name: Check Settings and Today in Chrome
         timeout-minutes: 2
+        env:
+          PRP_SCREENSHOTS: ${{ runner.temp }}/prp-screenshots
         run: node --experimental-websocket scripts/check-browser.js
+
+      - name: Save Today screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: today-screenshots
+          path: ${{ runner.temp }}/prp-screenshots/*.png
+          if-no-files-found: ignore

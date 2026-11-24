@@ -1,5 +1,7 @@
 import { createGitHubClient, GitHubError, isRepository } from './github.js';
 import { strings } from './strings.js';
+import { createFixtureClient, fixtureMode } from './fixtures.js';
+import { createTodayView } from './today-view.js';
 
 const SETTINGS_KEY = 'prp.settings';
 const TOKEN_KEY = 'prp.githubToken';
@@ -35,9 +37,12 @@ const themeField = byId('theme');
 const tabs = [...document.querySelectorAll('[data-tab]')];
 const routes = new Set([...tabs.map(tab => tab.dataset.tab), 'settings']);
 let settings = readSettings();
-let savedToken = readStorage(TOKEN_KEY);
+let savedToken = fixtureMode ? null : readStorage(TOKEN_KEY);
 let activeCheck;
 let connection;
+const fixtureClient = fixtureMode ? createFixtureClient() : null;
+const todayPanel = byId('today-panel');
+const todayView = createTodayView(todayPanel, { fixture: fixtureMode, onResponse: updateExpiration });
 
 for (const element of document.querySelectorAll('[data-string]')) {
   element.textContent = strings[element.dataset.string];
@@ -48,14 +53,21 @@ for (const element of document.querySelectorAll('[data-label]')) {
 
 function showRoute() {
   const requested = location.hash.slice(1);
-  const initial = isRepository(settings.repository ?? '') && savedToken ? 'today' : 'settings';
+  const connected = isRepository(settings.repository ?? '') && savedToken;
+  const initial = fixtureMode || connected ? 'today' : 'settings';
   const route = routes.has(requested) ? requested : initial;
   const selected = route === 'settings' ? 'more' : route;
   for (const tab of tabs) {
     if (tab.dataset.tab === selected) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
   }
-  const overview = route !== 'more' && route !== 'settings';
+  todayPanel.hidden = route !== 'today';
+  if (route === 'today') {
+    const branch = settings.branch || 'main';
+    todayView.show(fixtureClient || (connected && connectionFor(settings.repository, branch, savedToken)),
+      fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]));
+  } else todayView.hide();
+  const overview = route !== 'today' && route !== 'more' && route !== 'settings';
   byId('overview').hidden = !overview;
   byId('more-panel').hidden = route !== 'more';
   byId('settings-panel').hidden = route !== 'settings';
@@ -105,7 +117,7 @@ function connectionError(error) {
 
 function refreshTokenField() {
   tokenField.placeholder = savedToken ? strings.tokenStored : '';
-  forgetButton.disabled = !savedToken && !tokenField.value && !activeCheck;
+  forgetButton.disabled = fixtureMode || (!savedToken && !tokenField.value && !activeCheck);
 }
 
 function connectionFor(repository, branch, token) {
@@ -115,9 +127,17 @@ function connectionFor(repository, branch, token) {
   return connection.client;
 }
 
+function updateExpiration(client) {
+  const expiration = parseExpiration(client.tokenExpiration);
+  if (client !== connection?.client || expiration === null || expiration === settings.expiration || !savedToken) return;
+  settings = { ...settings, expiration };
+  showExpiration();
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* Keep the current warning. */ }
+}
+
 async function checkConnection(event) {
   event.preventDefault();
-  if (activeCheck) return;
+  if (activeCheck || fixtureMode) return;
   const repository = repositoryField.value.trim();
   const branch = branchField.value.trim() || 'main';
   const token = tokenField.value.trim() || savedToken;
@@ -157,7 +177,7 @@ async function checkConnection(event) {
 
 function finishCheck() {
   activeCheck = undefined;
-  checkButton.disabled = false;
+  checkButton.disabled = fixtureMode;
   repositoryField.readOnly = branchField.readOnly = tokenField.readOnly = false;
   refreshTokenField();
 }
@@ -181,6 +201,7 @@ function forgetToken() {
 repositoryField.value = settings.repository ?? '';
 branchField.value = settings.branch || 'main';
 refreshTokenField();
+checkButton.disabled = fixtureMode;
 applyTheme(readStorage(THEME_KEY));
 showExpiration();
 showRoute();

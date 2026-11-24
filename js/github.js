@@ -107,9 +107,12 @@ export function createGitHubClient({ repository, token, branch = 'main', fetchIm
   }
 
   // A mutator may run again after a conflicting write. It should only transform the supplied text.
-  async function update(path, mutateFn, message) {
+  async function update(path, mutateFn, message, { initial } = {}) {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const current = await getFile(path);
+      const current = await getFile(path).catch(error => {
+        if (!(error instanceof GitHubError) || error.status !== 404 || initial === undefined) throw error;
+        return { text: initial, sha: null };
+      });
       const text = await mutateFn(current.text);
       if (typeof text !== 'string') throw new TypeError('Expected updated file text');
       if (text === current.text) return current;
