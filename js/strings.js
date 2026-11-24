@@ -201,7 +201,7 @@ export const strings = {
     markDone: 'Отметить выполненным',
     undoDone: 'Вернуть в работу',
     progress: 'Выполнение плана',
-    counter: (done, total, elapsed, planned) => 'Сделано ' + done + '/' + total + ' · ' + elapsed + '/' + planned + ' мин',
+    counter: (done, total, timed) => 'Сделано ' + done + '/' + total + (timed ? ' · ' + timed + ' мин по таймеру' : ''),
     minutes: minutes => minutes + ' мин',
     important: 'Важное',
     makeImportant: '⭐ Важное',

@@ -169,7 +169,7 @@ try {
     assert.equal(viewport.content, viewport.viewport, width + ' px viewport has no horizontal page overflow');
     assert.equal(await evaluate("new Set([...document.querySelectorAll('.tabs a')].map(tab => tab.offsetTop)).size"), 1);
     assert.equal(await evaluate(tabInView), true);
-    assert.equal(await evaluate("document.querySelector('.today-count').textContent"), 'Сделано 1/4 · 0/75 мин');
+    assert.equal(await evaluate("document.querySelector('.today-count').textContent"), 'Сделано 2/6');
     assert.equal(await evaluate("document.body.textContent.includes('позже: 1')"), true);
     assert.equal(await evaluate("document.querySelector('[data-id=t4] .today-star').textContent"), '★');
     assert.equal(await evaluate('window.lastGitHubRequest'), undefined);

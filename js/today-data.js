@@ -248,11 +248,13 @@ export function nextFocusRow(before, current, after) {
   return remaining.values().next().value ?? null;
 }
 
-export function planProgress(groups) {
-  const items = Object.values(groups).flat().filter(row => row.path === planPath).map(row => row.item);
+// «Сделано»: plan items + to-dos (open, or done on `day`) by count; minutes only from timers (`spent`).
+export function planProgress(groups, day) {
+  const items = Object.values(groups).flat().filter(row => row.path === planPath ||
+    (row.path === todoPath && (!row.item.done || !day || String(row.item.done_at ?? '').startsWith(day)))).map(row => row.item);
   const done = items.filter(item => item.done);
-  const minutes = rows => rows.reduce((sum, item) => sum + (item.minutes ?? 0), 0);
-  return { done: done.length, total: items.length, elapsed: minutes(done), planned: minutes(items) };
+  const timed = items.reduce((sum, item) => sum + (Number(item.spent) || 0), 0);
+  return { done: done.length, total: items.length, timed };
 }
 
 export function splitReminders(data, now) {

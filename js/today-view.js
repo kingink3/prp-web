@@ -743,10 +743,10 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     const daily = data[planPath];
     date.textContent = dayLabel(daily.date) + (fixture ? ' · ' + s.fixture : '');
     const grouped = planGroups(daily, data[todoPath], statuses);
-    const totals = planProgress(grouped);
-    count.textContent = s.counter(totals.done, totals.total, totals.elapsed, totals.planned);
-    progress.max = totals.planned || totals.total || 1;
-    progress.value = totals.planned ? totals.elapsed : totals.done;
+    const totals = planProgress(grouped, daily.date);
+    count.textContent = s.counter(totals.done, totals.total, totals.timed);
+    progress.max = totals.total || 1;
+    progress.value = totals.done;
     for (const [name, rows] of Object.entries(grouped)) {
       groups[name].rows.replaceChildren(...rows.map(row => renderRow(row, rows)));
       groups[name].empty.hidden = Boolean(rows.length);
