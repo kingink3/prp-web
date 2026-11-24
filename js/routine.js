@@ -18,12 +18,25 @@ export function isPullNumber(value) {
     /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
 }
 
+// What people type → the exact form the routine accepts («идеи - тема» → «ideas: тема», «урок» → extra_lesson).
+export function normalizeRequest(input) {
+  const t = String(input ?? '').trim();  // keep line breaks inside a task description
+  if (/^((ещё|еще)\s+)?урок$|^extra_lesson$|^lesson$/i.test(t)) return 'extra_lesson';
+  const forms = [['(?:идеи|идея|ideas?)', 'ideas: '], ['(?:критик|critic)', 'critic: '], ['(?:тест|test)', 'test: '],
+    ['(?:codex-review|ревью)', 'codex-review: '], ['(?:кодекс|codex)(?!-)', 'кодекс: '], ['(?:ок|ok)', 'ок: ']];
+  for (const [word, form] of forms) {
+    const m = new RegExp('^' + word + '\\s*(?:[:\\-–—]\\s*|\\s+)(.+)$', 'isu').exec(t);
+    if (m) return form + m[1].trim();
+  }
+  return t;
+}
+
 export function routinePayload(input) {
-  const text = input.trim();
+  const text = normalizeRequest(input);
   if (text === 'extra_lesson') return text;
-  const [, command, value] = /^(ideas|critic|кодекс|codex-review|ок):\s*([\s\S]+)$/.exec(text) ?? [];
+  const [, command, value] = /^(ideas|critic|test|кодекс|codex-review|ок):\s*([\s\S]+)$/.exec(text) ?? [];
   if (command === 'ideas' || command === 'кодекс') return text;
-  if (command === 'critic' && /^idea-\d{8}-[\p{L}\p{N}_-]+$/u.test(value)) return text;
+  if ((command === 'critic' || command === 'test') && /^idea-\d{8}-[\p{L}\p{N}_-]+$/u.test(value)) return text;
   if (command === 'codex-review' || command === 'ок') {
     const [repo, pr, extra] = value.split('#');
     if (extra === undefined && (pr === undefined ? isPullNumber(repo) : isRepository(repo) && isPullNumber(pr))) {
