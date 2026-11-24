@@ -25,3 +25,20 @@ Use the Console's CSS variables verbatim (`--bg`, `--panel`, `--card`, `--card2`
 - Checkbox `.chk` 20px rounded square; on → `--ok`.
 - Section headings `h2`: 12px, uppercase, letter-spacing .9px, muted.
 - Cards/columns, badges, calendar cells (`.cal-d` lvl1–3), progress bars (`.pbar`, `.bbar`), toasts — as in the reference.
+
+## Row actions (plan items and to-dos)
+Right side of an open row shows only: the timer chip (`.timer`: time + ▶/⏸) and a `⋯` button (`.tbtn.more`).
+- Tap on the time → opens the item in focus mode. ▶ starts the timer in place.
+- `⋯` opens a small menu (`.rowmenu`) with labelled options: «⤢ Фокус», «💬 Комментарий / блокер»,
+  «⭐ Важное» / «☆ Снять важное», and «→ Завтра» for plan items only (to-dos have no «→ Завтра» and no «→ идея»).
+- No text buttons in the row itself. Long-press (touch) / right click toggles ⭐ important.
+- Comment / blocker fields stay hidden unless filled or opened from the menu; any open item can have them.
+
+## Focus mode
+One item full-screen (`.focus-card`): kind line, big title, task text, links, big timer — tap on its time to
+type the length (default from settings, 20 min) — comment/blocker always visible, buttons «✓ Готово»,
+«→ Завтра» (plan items only), «Пропустить», «✕». Order: open tasks → to-dos → learning → projects.
+Done / tomorrow move to the next open item; at the end «На сегодня всё».
+
+## Instant request
+The help text under the input is hidden behind a small «?» next to the heading.
