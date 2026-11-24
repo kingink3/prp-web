@@ -384,8 +384,139 @@ try {
   await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await waitFor(() => evaluate('window.getCount > window.beforeRefresh'));
   await idle();
+
+  // Exercise both integrations using fixture tasks and independent GitHub and routine responses.
+  const codexFixture = JSON.parse(await readFile(new URL('fixtures/lab/codex.json', root), 'utf8'));
+  const mockMore = data => {
+    if (location.search !== '?more=1') return;
+    const task = data.tasks[0];
+    data.tasks.push(
+      { ...task, id: 'cx-2', title: '<b>Review fixture</b>', repo: 'owner/other', pr: 42, status: 'review' },
+      { ...task, id: 'cx-3', repo: 'owner/repo', pr: 7, status: 'review' },
+      { ...task, id: 'cx-4', status: 'changes', fix: 'Fixture follow-up' },
+    );
+    localStorage.setItem('prp.settings', JSON.stringify({ repository: 'owner/repo', branch: 'main' }));
+    localStorage.setItem('prp.githubToken', 'fixture-github-token');
+    window.moreWrites = [];
+    window.routineRequests = [];
+    window.confirm = prompt => {
+      window.lastConfirmation = prompt;
+      return Boolean(window.allowApproval);
+    };
+    window.routineStatus = 202;
+    navigator.clipboard.writeText = async text => {
+      if (window.failClipboard) throw new Error('Fixture clipboard denied');
+      window.copiedCodexText = text;
+    };
+    window.fetch = async (url, options) => {
+      const parsed = new URL(url);
+      if (parsed.origin === 'https://api.anthropic.com') {
+        window.routineRequests.push({ url, ...options });
+        return new Response('fixture-routine-token', { status: window.routineStatus });
+      }
+      if (parsed.origin !== 'https://api.github.com' || !parsed.pathname.endsWith('/contents/codex.json')) {
+        return new Response(null, { status: 404 });
+      }
+      const sha = 'codex-' + window.moreWrites.length;
+      if (options.method === 'PUT') {
+        const write = JSON.parse(options.body);
+        if (write.sha !== sha) return new Response(null, { status: 409 });
+        window.moreWrites.push({ ...write, clipboard: window.copiedCodexText });
+        const bytes = Uint8Array.from(atob(write.content), char => char.charCodeAt(0));
+        data = JSON.parse(new TextDecoder().decode(bytes));
+        return Response.json({ content: { sha: 'codex-' + window.moreWrites.length } });
+      }
+      const bytes = new TextEncoder().encode(JSON.stringify(data));
+      const content = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
+      return Response.json({ type: 'file', encoding: 'base64', content, sha });
+    };
+  };
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: '(' + mockMore.toString() + ')(' + JSON.stringify(codexFixture) + ')',
+  });
+  await send('Page.navigate', { url: url + '?more=1#settings' });
+  const moreSettingsReady = "location.search === '?more=1' && document.title === 'Настройки · PRP'";
+  await waitFor(() => evaluate(moreSettingsReady));
+  assert.equal(await evaluate("document.querySelector('#routine-token').type"), 'password');
+  await evaluate(`document.querySelector('#routine-url').value = 'https://api.anthropic.com.evil/fire';
+    document.querySelector('#routine-token').value = 'fixture-routine-token'`);
+  await click('#routine-save');
+  assert.equal(await evaluate("document.querySelector('#routine-notice').classList.contains('error')"), true);
+  await evaluate("document.querySelector('#routine-url').value = 'https://api.anthropic.com/routines/fixture/fire'");
+  await click('#routine-save');
+  assert.equal(await evaluate("document.querySelector('#routine-token').value"), '');
+  await evaluate('window.waitingForReload = true');
+  await send('Page.reload');
+  await waitFor(() => evaluate(moreSettingsReady + " && !window.waitingForReload"));
+  assert.equal(await evaluate("document.querySelector('#routine-url').value.endsWith('/fixture/fire')"), true);
+  assert.equal(await evaluate("document.querySelector('#routine-token').value"), '');
+  await click('[data-tab=more]');
+  await waitFor(() => visible('[data-codex-status=ready]'));
+  assert.equal(await visible('[data-codex-id=cx-2] b'), false);
+  assert.match(await evaluate("document.querySelector('[data-codex-id=cx-2]').textContent"), /<b>Review fixture<\/b>/);
+  assert.equal(await evaluate("document.querySelector('[data-codex-id=cx-2] a').href"), 'https://github.com/owner/other/pull/42');
+  assert.equal(await evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth'), true);
+
+  await click('[data-payload="ideas: "]');
+  assert.equal(await evaluate("document.querySelector('#instant-text').value"), 'ideas: ');
+  await click('#instant-send');
+  assert.equal(await evaluate('window.routineRequests.length'), 0);
+  assert.equal(await evaluate("document.querySelector('#instant-notice').classList.contains('error')"), true);
+  await click('[data-payload="critic: "]');
+  assert.equal(await evaluate("document.querySelector('#instant-text').value"), 'critic: ');
+  await click('[data-payload=extra_lesson]');
+  for (const status of [401, 404, 429, 202]) {
+    await evaluate('window.routineStatus = ' + status);
+    await click('#instant-send');
+    const expected = status === 202 ? 'Запрос принят.' : String(status);
+    await waitFor(() => evaluate("document.querySelector('#instant-notice').textContent.startsWith(" + JSON.stringify(expected) + ')'));
+  }
+  assert.equal(await evaluate('window.routineRequests.length'), 4);
+  assert.equal(await evaluate("window.routineRequests[0].body"), '{"text":"extra_lesson"}');
+  assert.equal(await evaluate('window.routineRequests[0].headers.Authorization'), 'Bearer fixture-routine-token');
+  assert.equal(await evaluate("document.body.textContent.includes('fixture-routine-token')"), false);
+
+  const codexIdle = () => waitFor(() => evaluate("document.querySelector('#codex-list').getAttribute('aria-busy') === 'false'"));
+  const row = '[data-codex-id=cx-1900000003]';
+  await evaluate('window.failClipboard = true');
+  await click(row + ' button:first-child');
+  await codexIdle();
+  assert.equal(await evaluate('window.moreWrites.length'), 0);
+  assert.equal(await visible('[data-codex-status=ready] ' + row), true);
+  await evaluate('window.failClipboard = false');
+  await click(row + ' button:first-child');
+  await codexIdle();
+  assert.equal(await visible('[data-codex-status=sent] ' + row), true);
+  assert.match(await evaluate('window.moreWrites[0].clipboard'), /PRP task cx-1900000003 — Add tests/);
+  assert.equal(await evaluate('window.moreWrites[0].message'), 'lab: web — send Codex task cx-1900000003');
+  await click(row + ' button');
+  await codexIdle();
+  assert.equal(await visible('[data-codex-status=cancelled] ' + row), true);
+  await click(row + ' button');
+  await codexIdle();
+  assert.equal(await visible('[data-codex-status=ready] ' + row), true);
+  await click('[data-codex-id=cx-4] button:first-child');
+  await codexIdle();
+  assert.equal(await evaluate('window.moreWrites[3].clipboard'), 'Fixture follow-up');
+
+  await click('[data-codex-id=cx-2] button:first-child');
+  assert.match(await evaluate('window.lastConfirmation'), /42.*owner\/other/);
+  assert.equal(await evaluate('window.routineRequests.length'), 4);
+  await evaluate('window.allowApproval = true');
+  for (const [id, payload] of [['cx-2', 'ок: owner/other#42'], ['cx-3', 'ок: 7']]) {
+    await click('[data-codex-id=' + id + '] button:first-child');
+    await codexIdle();
+    assert.equal(await evaluate('JSON.parse(window.routineRequests.at(-1).body).text'), payload);
+    assert.equal(await visible('[data-codex-status=review] [data-codex-id=' + id + ']'), true);
+  }
+  assert.equal(await evaluate('window.moreWrites.length'), 4);
+  await click('.menu-link');
+  await waitFor(() => evaluate("document.title === 'Настройки · PRP'"));
+  await click('#routine-forget');
+  assert.equal(await evaluate("JSON.parse(localStorage.getItem('prp.routine')).token"), undefined);
+  assert.equal(await evaluate("localStorage.getItem('prp.githubToken')"), 'fixture-github-token');
   assert.deepEqual(errors, []);
-  console.log('Browser Settings, Today, Directions, Ideas and Calendar checks passed');
+  console.log('Browser Settings, Today, Directions, Ideas, Calendar and More checks passed');
 } finally {
   socket?.close();
   if (chrome.pid && chrome.exitCode === null) {

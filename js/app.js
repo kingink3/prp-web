@@ -4,9 +4,13 @@ import { createFixtureClient, fixtureMode } from './fixtures.js';
 import { createTodayView } from './today-view.js';
 import { createObjectView } from './object-view.js';
 import { createCalendarView } from './calendar-view.js';
+import { createMoreView } from './more-view.js';
+import { isRoutineUrl } from './routine.js';
+import { showNotice } from './work-dom.js';
 
 const SETTINGS_KEY = 'prp.settings';
 const TOKEN_KEY = 'prp.githubToken';
+const ROUTINE_KEY = 'prp.routine';
 const THEME_KEY = 'prp.theme';
 const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
 const byId = id => document.getElementById(id);
@@ -19,9 +23,9 @@ function readStorage(key) {
   }
 }
 
-function readSettings() {
+function readSettings(key) {
   try {
-    return JSON.parse(readStorage(SETTINGS_KEY)) ?? {};
+    return JSON.parse(readStorage(key)) ?? {};
   } catch {
     return {};
   }
@@ -31,6 +35,11 @@ const form = byId('settings-form');
 const repositoryField = byId('repository');
 const branchField = byId('branch');
 const tokenField = byId('token');
+const routineForm = byId('routine-form');
+const routineUrl = byId('routine-url');
+const routineToken = byId('routine-token');
+const routineForget = byId('routine-forget');
+const routineNotice = byId('routine-notice');
 const checkButton = byId('check');
 const forgetButton = byId('forget');
 const status = byId('connection-status');
@@ -38,8 +47,9 @@ const warning = byId('expiry-warning');
 const themeField = byId('theme');
 const tabs = [...document.querySelectorAll('[data-tab]')];
 const routes = new Set([...tabs.map(tab => tab.dataset.tab), 'settings']);
-let settings = readSettings();
+let settings = readSettings(SETTINGS_KEY);
 let savedToken = fixtureMode ? null : readStorage(TOKEN_KEY);
+let routine = fixtureMode ? {} : readSettings(ROUTINE_KEY);
 let activeCheck;
 let connection;
 const fixtureClient = fixtureMode ? createFixtureClient() : null;
@@ -49,6 +59,12 @@ const objectPanel = byId('objects-panel');
 const objectView = createObjectView(objectPanel, { fixture: fixtureMode, onResponse: updateExpiration });
 const calendarPanel = byId('calendar-panel');
 const calendarView = createCalendarView(calendarPanel, { fixture: fixtureMode, onResponse: updateExpiration });
+const morePanel = byId('more-panel');
+const moreView = createMoreView(morePanel, {
+  fixture: fixtureMode,
+  getRoutine: () => routine.token === savedToken ? {} : routine,
+  onResponse: updateExpiration,
+});
 
 for (const element of document.querySelectorAll('[data-string]')) {
   element.textContent = strings[element.dataset.string];
@@ -83,7 +99,9 @@ function showRoute() {
   calendarPanel.hidden = route !== 'calendar';
   if (calendarPanel.hidden) calendarView.hide();
   else calendarView.show(client);
-  byId('more-panel').hidden = route !== 'more';
+  morePanel.hidden = route !== 'more';
+  if (morePanel.hidden) moreView.hide();
+  else moreView.show(client, fixtureMode ? 'owner/repo' : settings.repository);
   byId('settings-panel').hidden = route !== 'settings';
   document.title = `${strings[route]} · ${strings.appName}`;
 }
@@ -95,9 +113,7 @@ function applyTheme(theme) {
 }
 
 function showStatus(message, kind = '') {
-  status.textContent = message;
-  status.className = kind ? `notice ${kind}` : 'notice';
-  status.hidden = !message;
+  showNotice(status, message, kind);
 }
 
 function showExpiration() {
@@ -211,9 +227,52 @@ function forgetToken() {
   showStatus(strings.forgotten);
 }
 
+function refreshRoutineFields() {
+  routineUrl.value = routine.url ?? '';
+  routineToken.value = '';
+  routineToken.placeholder = routine.token ? strings.tokenStored : '';
+  routineForget.disabled = fixtureMode || !routine.token;
+  byId('routine-save').disabled = fixtureMode;
+  routineUrl.readOnly = routineToken.readOnly = fixtureMode;
+}
+
+function saveRoutine(event) {
+  event.preventDefault();
+  if (fixtureMode) return;
+  const url = routineUrl.value.trim();
+  const token = routineToken.value.trim() || routine.token;
+  const s = strings.moreView;
+  if (!isRoutineUrl(url)) return showNotice(routineNotice, s.invalidUrl, 'error');
+  if (!token) return showNotice(routineNotice, s.missingToken, 'error');
+  if (token === savedToken) return showNotice(routineNotice, s.separateToken, 'error');
+  const next = { url, token };
+  try {
+    localStorage.setItem(ROUTINE_KEY, JSON.stringify(next));
+  } catch {
+    return showNotice(routineNotice, s.storageError, 'error');
+  }
+  routine = next;
+  refreshRoutineFields();
+  showNotice(routineNotice, s.settingsSaved, 'success');
+}
+
+function forgetRoutineToken() {
+  if (fixtureMode) return;
+  const next = { url: routine.url };
+  try {
+    localStorage.setItem(ROUTINE_KEY, JSON.stringify(next));
+  } catch {
+    return showNotice(routineNotice, strings.forgetFailed, 'error');
+  }
+  routine = next;
+  refreshRoutineFields();
+  showNotice(routineNotice, strings.forgotten, 'success');
+}
+
 repositoryField.value = settings.repository ?? '';
 branchField.value = settings.branch || 'main';
 refreshTokenField();
+refreshRoutineFields();
 checkButton.disabled = fixtureMode;
 applyTheme(readStorage(THEME_KEY));
 showExpiration();
@@ -223,6 +282,8 @@ window.addEventListener('hashchange', showRoute);
 form.addEventListener('submit', checkConnection);
 tokenField.addEventListener('input', refreshTokenField);
 forgetButton.addEventListener('click', forgetToken);
+routineForm.addEventListener('submit', saveRoutine);
+routineForget.addEventListener('click', forgetRoutineToken);
 themeField.addEventListener('change', () => {
   applyTheme(themeField.value);
   try { localStorage.setItem(THEME_KEY, themeField.value); } catch { /* Keep the current selection. */ }

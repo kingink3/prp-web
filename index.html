@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com https://api.anthropic.com; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
 <link rel="stylesheet" href="./css/app.css">
@@ -37,6 +37,30 @@
   <section id="more-panel" hidden>
     <h1 data-string="more"></h1>
     <a class="menu-link" href="#settings" data-string="settings"></a>
+    <section class="card more-card" aria-labelledby="instant-heading">
+      <h2 id="instant-heading" data-string="instantRequest"></h2>
+      <form id="instant-form" class="more-form" autocomplete="off">
+        <label class="field" for="instant-text">
+          <span data-string="instantText"></span>
+          <textarea id="instant-text" rows="3" required></textarea>
+        </label>
+        <div class="actions">
+          <button type="button" data-payload="extra_lesson" data-string="instantLesson"></button>
+          <button type="button" data-payload="ideas: " data-string="instantIdeas"></button>
+          <button type="button" data-payload="critic: " data-string="instantCritic"></button>
+        </div>
+        <button id="instant-send" type="submit" class="primary" data-string="instantSend"></button>
+        <p id="instant-notice" class="notice" role="status" hidden></p>
+      </form>
+    </section>
+    <section class="card" aria-labelledby="codex-heading">
+      <div class="codex-header">
+        <h2 id="codex-heading" data-string="codexTasks"></h2>
+        <button id="codex-refresh" type="button" data-string="codexRefresh" hidden></button>
+      </div>
+      <p id="codex-notice" class="notice" role="status" hidden></p>
+      <div id="codex-list"></div>
+    </section>
   </section>
 
   <section id="settings-panel" hidden>
@@ -63,6 +87,25 @@
           <button id="forget" type="button" data-string="forget" disabled></button>
         </div>
         <p id="connection-status" class="notice" role="status" hidden></p>
+      </form>
+    </div>
+    <div class="card">
+      <h2 data-string="instantRequest"></h2>
+      <form id="routine-form" class="more-form" autocomplete="off">
+        <label class="field" for="routine-url">
+          <span data-string="routineUrl"></span>
+          <input id="routine-url" type="url" autocapitalize="none" spellcheck="false" required>
+        </label>
+        <label class="field" for="routine-token">
+          <span data-string="routineToken"></span>
+          <input id="routine-token" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="routine-token-hint">
+        </label>
+        <p class="hint" id="routine-token-hint" data-string="routineTokenHint"></p>
+        <div class="actions">
+          <button id="routine-save" type="submit" class="primary" data-string="routineSave"></button>
+          <button id="routine-forget" type="button" data-string="routineForget" disabled></button>
+        </div>
+        <p id="routine-notice" class="notice" role="status" hidden></p>
       </form>
     </div>
     <div class="card theme-card">

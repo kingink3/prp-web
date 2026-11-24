@@ -37,11 +37,15 @@ same through the GitHub Contents API. Each bullet = one user action = one commit
 ## Instant request
 - A text box that fires the owner's cloud routine (URL + token stored on the device, same rules as the
   GitHub token). Supported payloads: `extra_lesson`, `ideas: …`, `critic: <idea id>`, `кодекс: …`,
-  `codex-review: <n>`, `ок: <n>`.
+  `codex-review: <n>`, `ок: <n>`. PR commands also accept `owner/repo#<n>` for another repository.
 
 ## Codex tasks (`codex.json`)
 - List by status ready → sent → review → changes → merged/cancelled; "copy prompt" builds the task prompt
-  (see `codex.json` in the schema); "✓ Влить" fires `ок: <n>`.
+  (see `codex.json` in the schema). Copying a ready task or a follow-up from `changes` moves it to
+  `sent` after the clipboard write succeeds.
+- Cancel an open task or reopen a cancelled one as `ready`.
+- For a task in `review`, "✓ Влить" asks for confirmation and fires `ок: <n>` for the data repo or
+  `ок: owner/repo#<n>` for another repository. The routine and CI handle the merge and status update.
 
 ## Timers
 - Local to the device (localStorage), default length 20 min, editable before start; end → sound +
