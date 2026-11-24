@@ -7,6 +7,8 @@
       "title": "Read chapter 3",
       "kind": "learning",
       "ref": "learning-20300101-sample-course",
+      "task": "Read the chapter and write a short summary.",
+      "links": [{ "title": "Chapter notes", "url": "https://example.org/chapter-3" }],
       "minutes": 30
     },
     {

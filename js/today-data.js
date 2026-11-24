@@ -191,6 +191,39 @@ export function planGroups(plan, todoList, statuses) {
   return groups;
 }
 
+export function rowActions({ item, path }) {
+  if (item.done) return [];
+  const actions = ['focus', 'notes', item.important ? 'unimportant' : 'makeImportant'];
+  if (path === planPath) actions.push('postpone');
+  return actions;
+}
+
+export function focusOrder({ tasks, learning, projects }) {
+  return [
+    ...tasks.filter(row => row.path === planPath),
+    ...tasks.filter(row => row.path === todoPath),
+    ...learning,
+    ...projects,
+  ].filter(row => !row.item.done);
+}
+
+export function focusItemKey(row) {
+  return JSON.stringify([row.path, row.item.id]);
+}
+
+// Start after the selected item and wrap past the last item, using the latest open rows.
+export function nextFocusRow(before, current, after) {
+  const key = focusItemKey(current);
+  const index = before.findIndex(row => focusItemKey(row) === key);
+  const remaining = new Map(after.map(row => [focusItemKey(row), row]));
+  remaining.delete(key);
+  for (const row of [...before.slice(index + 1), ...before.slice(0, Math.max(index, 0))]) {
+    const next = remaining.get(focusItemKey(row));
+    if (next) return next;
+  }
+  return remaining.values().next().value ?? null;
+}
+
 export function planProgress(groups) {
   const items = Object.values(groups).flat().filter(row => row.path === planPath).map(row => row.item);
   const done = items.filter(item => item.done);

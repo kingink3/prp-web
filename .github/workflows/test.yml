@@ -49,3 +49,11 @@ jobs:
             ${{ runner.temp }}/prp-screenshots/design-*.png
             ${{ runner.temp }}/prp-screenshots/design-comparison.html
           if-no-files-found: ignore
+
+      - name: Save row actions and focus screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: row-actions-focus-screenshots
+          path: ${{ runner.temp }}/prp-screenshots/focus-*.png
+          if-no-files-found: ignore
