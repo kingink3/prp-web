@@ -209,7 +209,7 @@ try {
   await click('[data-id=t4] .today-check');
   await idle();
   await menu('t4', '💬 Комментарий / блокер');
-  await evaluate("document.querySelector('textarea').value = '<b>Fixture note</b>'");
+  await evaluate("document.querySelector('.today-dialog textarea').value = '<b>Fixture note</b>'");
   await click('dialog button[type=submit], dialog .primary');
   await idle();
   assert.equal(await evaluate("document.querySelector('[data-id=t4]').textContent.includes('<b>Fixture note</b>')"), true);
@@ -399,25 +399,24 @@ try {
   await waitFor(() => visible('[data-id^=p-]'));
   assert.match(await evaluate("document.querySelector('[data-id^=p-]').textContent"), /Show to 3 people/);
 
-
   const fixtureRequests = count => evaluate("document.querySelector('#fixture-requests:not([hidden])')?.dataset.count === '" + count + "'");
   await send('Page.navigate', { url: url + '?fixtures=1&cold=today#today' });
   await waitFor(() => fixtureRequests(4));
-  await waitFor(() => visible('.today-daily-ideas'));
+  await waitFor(() => visible('#today-panel:not([hidden]) .today-daily-ideas:not([hidden])'));
   await evaluate("document.querySelector('.today-daily-ideas textarea').value = 'Daily owner note'");
   await click('.today-daily-ideas .work-comment button');
   await idle();
   assert.equal(await evaluate("document.querySelector('.today-daily-ideas textarea').value"), 'Daily owner note');
   await click('.today-daily-ideas .work-reactions button:nth-child(2)');
   await idle();
-  assert.equal(await visible('.today-daily-ideas'), false);
+  assert.equal(await visible('#today-panel:not([hidden]) .today-daily-ideas:not([hidden])'), false);
 
   await send('Page.navigate', { url: url + '?fixtures=1&cold=ideas#ideas' });
   await waitFor(() => fixtureRequests(2));
   await waitFor(() => visible('.idea-list .work-idea'));
   assert.equal(await evaluate("document.querySelectorAll('.idea-list .work-idea').length"), 2);
-  assert.equal(await visible('.today-daily-ideas'), false);
-  assert.equal(await visible('.work-comment'), false);
+  assert.equal(await visible('#today-panel:not([hidden]) .today-daily-ideas:not([hidden])'), false);
+  assert.equal(await visible('.idea-list .work-comment'), false);
   assert.match(await evaluate("document.querySelector('.idea-list .work-idea').textContent"), /деньги · Идеи и тесты · новая · от агента.*Риск: Prices/);
   await waitFor(() => evaluate("!document.querySelector('.idea-plan').disabled"));
   await workCapture('ideas');
