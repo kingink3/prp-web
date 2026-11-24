@@ -688,6 +688,102 @@ try {
   assert.equal(await evaluate("JSON.parse(localStorage.getItem('prp.routine')).token"), undefined);
   assert.equal(await evaluate("localStorage.getItem('prp.githubToken')"), 'fixture-github-token');
   assert.deepEqual(errors, []);
+  // Keep the plan day fixed and exercise the actual clock-based tab switch.
+  const checkInClock = hour => {
+    const RealDate = Date;
+    window.Date = class extends RealDate {
+      constructor(...args) {
+        super(...(args.length ? args : [2030, 0, 15, hour, 30]));
+      }
+    };
+    navigator.clipboard.writeText = async text => { window.checkInClipboard = text; };
+  };
+  const step = () => evaluate("document.querySelector('.msteps [aria-current=step]')?.textContent");
+  const stepButton = index => '.msteps button:nth-child(' + (index + 1) + ')';
+  const checkInIdle = () => waitFor(() => evaluate("document.querySelector('.mbody')?.getAttribute('aria-busy') === 'false'"));
+  const checkInText = () => evaluate("document.querySelector('.checkin-content').textContent");
+  const checkInAction = text => evaluate(`[...document.querySelectorAll('.checkin-content button')]
+    .find(button => button.textContent === ${JSON.stringify(text)}).click()`);
+  for (const [hour, title, labels] of [
+    [10, '☀ Утро', ['Сводка', 'Хвосты', 'Идеи', 'Сборка дня', 'Старт']],
+    [22, '🌙 Итоги', ['Итог дня', 'Несделанное', 'Где остановился', 'Тесты', 'Завтра']],
+  ]) {
+    const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: '(' + checkInClock.toString() + ')(' + hour + ')',
+    });
+    for (const [width, height] of [[390, 844], [1280, 900]]) {
+      await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 });
+      await send('Page.navigate', { url: url + '?fixtures=1&checkin=' + hour + '-' + width + '#morning' });
+      await waitFor(async () => (await step()) === labels[0]);
+      assert.equal(await evaluate("document.querySelector('.tabs a:first-child').textContent"), title);
+      assert.equal(await evaluate("document.querySelector('.tabs a:first-child').getAttribute('aria-current')"), 'page');
+      assert.equal(await evaluate('document.title'), title + ' · PRP');
+      assert.match(await checkInText(), hour === 10 ? /Вчера1 из 1/ : /Сделано1 из 4/);
+      if (hour === 10) {
+        assert.equal(await evaluate("document.querySelector('.checkin-content a').href"), 'https://example.com/sample-brief');
+      }
+      await capture(`checkin-${hour === 10 ? 'morning' : 'evening'}-summary-${width}`, width, height);
+      for (let index = 1; index < labels.length; index++) {
+        await click('.checkin-navigation .primary');
+        assert.equal(await step(), labels[index]);
+        assert.equal(await evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth'), true);
+        if (hour === 10 && index === 2) {
+          assert.match(await checkInText(), /Pocket price checker/);
+          await evaluate("document.querySelector('.checkin-entry input').value = 'Try two shops'; document.querySelector('.checkin-entry').requestSubmit()");
+          await checkInIdle();
+          assert.equal(await evaluate("document.querySelector('.checkin-entry input').value"), 'Try two shops');
+        }
+        if (hour === 10 && index === 3) {
+          await evaluate('document.activeElement.blur(); window.scrollTo(0, 0)');
+          await capture(`checkin-morning-plan-${width}`, width, height);
+          await checkInAction('＋ 45 мин');
+          await checkInIdle();
+          assert.match(await checkInText(), /120 из 180 мин/);
+          await checkInAction('📋 скопировать');
+          await checkInIdle();
+          assert.match(await evaluate('window.checkInClipboard'), /PRP task cx-1900000003/);
+          assert.doesNotMatch(await checkInText(), /Add tests/);
+        }
+        if (hour === 22 && index === 2) {
+          await evaluate("document.querySelector('.checkin-entry input').value = 'Continue at chapter four'; document.querySelector('.checkin-entry').requestSubmit()");
+          await checkInIdle();
+          assert.equal(await evaluate("document.querySelector('.checkin-entry input').value"), 'Continue at chapter four');
+          assert.match(await evaluate("document.querySelector('.mbody .notice').textContent"), /Сохранено/);
+        }
+        if (hour === 22 && index === 3) {
+          await checkInAction('＋ завтра · 45 мин');
+          await checkInIdle();
+        }
+        if (hour === 22 && index === 4) {
+          assert.match(await checkInText(), /45 из 180 мин.*Sample interviews/);
+          await evaluate('document.activeElement.blur(); window.scrollTo(0, 0)');
+          await capture(`checkin-evening-tomorrow-${width}`, width, height);
+          await checkInAction('✓ Итоги подведены');
+          await checkInIdle();
+          assert.match(await checkInText(), /Итоги подведены · 22:30/);
+        }
+      }
+      await click('.checkin-navigation button');
+      assert.equal(await step(), labels[3]);
+      await click(stepButton(0));
+      assert.equal(await step(), labels[0]);
+      if (hour === 10) {
+        await click(stepButton(4));
+        await click('.checkin-content a[href="#today/focus"]');
+        await waitFor(() => visible('.focus-view[open]'));
+        assert.equal(await evaluate("document.querySelector('#focus-title').textContent"), 'Call the plumber');
+        await click('.focus-close');
+        await waitForFocusClose();
+        await click('.tabs a:first-child');
+        await waitFor(async () => (await step()) === labels[0]);
+        await click(stepButton(4));
+        await click('.checkin-content a[href="#today"]');
+        await waitFor(() => visible('#today-panel:not([hidden])'));
+      }
+    }
+    await send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+  }
+  assert.deepEqual(errors, []);
   if (screenshots) {
     const reference = await readFile(new URL('docs/console-reference.css', root), 'utf8');
     const images = [];
@@ -751,7 +847,7 @@ try {
     await writeFile(join(screenshots, 'design-comparison.html'), comparisonHtml(images));
   }
   assert.deepEqual(errors, []);
-  console.log('Browser Settings, Today, Directions, Ideas, Calendar and More checks passed');
+  console.log('Browser Settings, Today, Directions, Ideas, Calendar, More and Check-in checks passed');
 } finally {
   socket?.close();
   if (chrome.pid && chrome.exitCode === null) {

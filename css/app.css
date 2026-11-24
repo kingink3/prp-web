@@ -1,3 +1,40 @@
+/* Morning and evening check-in */
+#checkin-panel { scroll-margin-top: 110px; }
+.msteps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.msteps button {
+  padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card); color: var(--muted); box-shadow: none;
+}
+.msteps button.past { color: var(--fg); }
+.msteps button.on {
+  border-color: var(--accent); background: var(--accent-bg); color: var(--fg); font-weight: 600;
+}
+.mbody { max-width: 820px; }
+.checkin-content { display: grid; gap: 14px; justify-items: stretch; }
+.checkin-content > a { justify-self: start; }
+.mcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 10px; }
+.mcard {
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--card); overflow-wrap: anywhere;
+}
+.mcard b { display: block; margin: 4px 0 2px; font-size: 16px; }
+.checkin-budget { min-width: 0; }
+.checkin-budget .bbar { margin-top: 6px; }
+.bbar.over-budget::-webkit-progress-value { background: var(--warn); }
+.bbar.over-budget::-moz-progress-bar { background: var(--warn); }
+.checkin-section { display: grid; gap: 8px; }
+.checkin-section h2, .checkin-row h3, .checkin-section p { margin: 0; }
+.checkin-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.checkin-row > div:first-child { flex: 1 1 180px; min-width: 0; }
+.checkin-row h3 { font-size: 1rem; }
+.checkin-row .work-text { margin-top: 4px; }
+.checkin-entry { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: end; gap: 8px; }
+.checkin-entry .field { flex: 1 1 160px; min-width: 0; margin: 0; }
+.checkin-navigation { margin-top: 16px; }
+@media (max-width: 699px) {
+  .msteps button, .mbody .btn { min-height: 40px; }
+}
+
 :root {
   color-scheme: light;
   --bg: #f6f7f9;

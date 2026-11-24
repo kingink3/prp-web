@@ -17,6 +17,7 @@ export function createLabData(client, { namespace, storage = cacheStorage(), now
   const patches = new Map(Object.entries(saved?.patches ?? {}));
   const requests = new Map();
   let legacy = saved?.legacy;
+  let historyDates = saved?.historyDates;
   let objectRequest;
   let cleared = false;
 
@@ -24,12 +25,18 @@ export function createLabData(client, { namespace, storage = cacheStorage(), now
     if (!key || cleared) return;
     try {
       storage?.setItem(key, JSON.stringify({
-        files: Object.fromEntries(files), patches: Object.fromEntries(patches), legacy,
+        files: Object.fromEntries(files), patches: Object.fromEntries(patches), legacy, historyDates,
       }));
     } catch { /* Keep the current session usable when storage is full or unavailable. */ }
   }
 
   const peek = path => files.get(path);
+  const peekHistoryDates = () => historyDates;
+
+  function rememberHistoryDates(dates) {
+    historyDates = dates;
+    persist();
+  }
 
   function remember(path, file) {
     files.set(path, file);
@@ -99,9 +106,10 @@ export function createLabData(client, { namespace, storage = cacheStorage(), now
     files.clear();
     patches.clear();
     legacy = undefined;
+    historyDates = undefined;
     if (!key) return;
     try { storage?.removeItem(key); } catch { /* Storage can be unavailable. */ }
   }
 
-  return { peek, refresh, remember, peekObjects, refreshObjects, patchObject, clear };
+  return { peek, refresh, remember, peekObjects, refreshObjects, patchObject, peekHistoryDates, rememberHistoryDates, clear };
 }

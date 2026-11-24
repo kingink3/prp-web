@@ -6,6 +6,8 @@ import { createTodayView } from './today-view.js';
 import { createObjectView } from './object-view.js';
 import { createCalendarView } from './calendar-view.js';
 import { createMoreView } from './more-view.js';
+import { createCheckInView } from './check-in-view.js';
+import { isEvening } from './check-in-data.js';
 import { isRoutineUrl } from './routine.js';
 import { createLabData } from './lab-data.js';
 import { showNotice } from './work-dom.js';
@@ -106,6 +108,10 @@ const moreView = createMoreView(morePanel, {
   getRoutine: () => routine.token === savedToken ? {} : routine,
   onResponse: updateExpiration,
 });
+const checkInPanel = byId('checkin-panel');
+const checkInView = createCheckInView(checkInPanel, { fixture: fixtureMode, routine: moreView, onResponse: updateExpiration });
+const checkInTab = tabs.find(tab => tab.dataset.tab === 'morning');
+let evening;
 
 for (const element of document.querySelectorAll('[data-string]')) {
   element.textContent = strings[element.dataset.string];
@@ -114,7 +120,16 @@ for (const element of document.querySelectorAll('[data-label]')) {
   element.setAttribute('aria-label', strings[element.dataset.label]);
 }
 
+function updateCheckInMode() {
+  const next = isEvening(new Date());
+  if (next === evening) return false;
+  evening = next;
+  checkInTab.textContent = evening ? strings.evening : strings.morning;
+  return true;
+}
+
 function showRoute() {
+  updateCheckInMode();
   const [requested, detail] = location.hash.slice(1).split('/');
   const connected = isRepository(settings.repository ?? '') && savedToken;
   const initial = fixtureMode || connected ? 'today' : 'settings';
@@ -129,9 +144,13 @@ function showRoute() {
   const client = fixtureClient || (connected ? connectionFor(settings.repository, branch, savedToken) : null);
   const lab = fixtureLab ?? (client && connection.lab);
   measureFixture(route, detail);
+  checkInPanel.hidden = route !== 'morning';
+  if (checkInPanel.hidden) checkInView.hide();
+  else checkInView.show(client, lab, fixtureMode ? 'owner/repo' : settings.repository, evening);
   todayPanel.hidden = route !== 'today';
   if (route === 'today') {
-    todayView.show(client, lab, fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]));
+    if (detail === 'focus') history.replaceState(history.state, '', '#today');
+    todayView.show(client, lab, fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]), detail === 'focus');
   } else todayView.hide();
   objectPanel.hidden = route !== 'directions' && route !== 'ideas';
   if (objectPanel.hidden) objectView.hide();
@@ -142,12 +161,13 @@ function showRoute() {
   }
   calendarPanel.hidden = route !== 'calendar';
   if (calendarPanel.hidden) calendarView.hide();
-  else calendarView.show(client);
+  else calendarView.show(client, lab);
   morePanel.hidden = route !== 'more';
   if (morePanel.hidden) moreView.hide();
   else moreView.show(client, fixtureMode ? 'owner/repo' : settings.repository);
   byId('settings-panel').hidden = route !== 'settings';
-  document.title = `${strings[route]} · ${strings.appName}`;
+  const title = route === 'morning' && evening ? strings.evening : strings[route];
+  document.title = `${title} · ${strings.appName}`;
 }
 
 function applyTheme(theme) {
@@ -326,6 +346,13 @@ showExpiration();
 showRoute();
 
 window.addEventListener('hashchange', showRoute);
+function refreshCheckInMode() {
+  if (updateCheckInMode() && !checkInPanel.hidden) showRoute();
+}
+setInterval(refreshCheckInMode, 30_000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshCheckInMode();
+});
 form.addEventListener('submit', checkConnection);
 tokenField.addEventListener('input', refreshTokenField);
 forgetButton.addEventListener('click', forgetToken);

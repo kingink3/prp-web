@@ -57,3 +57,11 @@ jobs:
           name: row-actions-focus-screenshots
           path: ${{ runner.temp }}/prp-screenshots/focus-*.png
           if-no-files-found: ignore
+
+      - name: Save morning and evening screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: morning-evening-screenshots
+          path: ${{ runner.temp }}/prp-screenshots/checkin-*.png
+          if-no-files-found: ignore
