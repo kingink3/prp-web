@@ -1,0 +1,79 @@
+{
+ "generated": "2030-01-15T09:00",
+ "objects": [
+  {
+   "id": "experiment-20300115-sample-interview",
+   "type": "experiment",
+   "title": "Sample interviews",
+   "lang": "en",
+   "status": "running",
+   "created": "2030-01-15",
+   "last_touched": "2030-01-15",
+   "next_step": "Prepare three questions",
+   "path": "experiments/experiment-20300115-sample-interview.md"
+  },
+  {
+   "id": "idea-20300110-sample-notebook",
+   "type": "idea",
+   "title": "Recipe notebook",
+   "lang": "en",
+   "status": "parked",
+   "created": "2030-01-10",
+   "last_touched": "2030-01-13",
+   "next_step": "List three sample recipes",
+   "path": "ideas/idea-20300110-sample-notebook.md"
+  },
+  {
+   "id": "idea-20300115-sample-tool",
+   "type": "idea",
+   "area": "ideas",
+   "title": "Pocket price checker",
+   "lang": "en",
+   "purpose": "money",
+   "status": "new",
+   "created": "2030-01-15",
+   "last_touched": "2030-01-15",
+   "source": "fixture",
+   "tags": [],
+   "links": [],
+   "next_step": "Ask 5 people",
+   "path": "ideas/idea-20300115-sample-tool.md"
+  },
+  {
+   "id": "learning-20300101-sample-course",
+   "type": "learning",
+   "area": "learning",
+   "title": "Sample course",
+   "lang": "en",
+   "purpose": "learning",
+   "status": "active",
+   "created": "2030-01-01",
+   "last_touched": "2030-01-14",
+   "source": "fixture",
+   "tags": [],
+   "links": [],
+   "next_step": "Read chapter 3",
+   "platform": "book",
+   "progress": "2/10",
+   "path": "learning/learning-20300101-sample-course.md"
+  },
+  {
+   "id": "project-20300101-sample-app",
+   "type": "project",
+   "area": "projects",
+   "title": "Sample app",
+   "lang": "en",
+   "purpose": "money",
+   "status": "active",
+   "created": "2030-01-01",
+   "last_touched": "2030-01-14",
+   "source": "fixture",
+   "tags": [],
+   "links": "[\"https://example.com/sample\"]",
+   "next_step": "Draft landing copy",
+   "path": "projects/project-20300101-sample-app.md",
+   "tasks_total": 3,
+   "tasks_done": 1
+  }
+ ]
+}
