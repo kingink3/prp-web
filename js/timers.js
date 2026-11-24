@@ -1,19 +1,32 @@
 const KEY = 'prp.timers';
 
-export function createTimers({ persistent, onTick }) {
+export function createTimerStore(storage) {
   let timers = {};
-  let audio;
   try {
-    if (persistent) timers = JSON.parse(localStorage.getItem(KEY)) ?? {};
+    const saved = JSON.parse(storage?.getItem(KEY) ?? 'null');
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) timers = saved;
   } catch { /* The current session still works. */ }
 
   function write(key, value) {
-    if (value) timers[key] = value;
-    else delete timers[key];
-    if (persistent) {
-      try { localStorage.setItem(KEY, JSON.stringify(timers)); } catch { /* Keep the session state. */ }
-    }
+    timers[key] = value;
+    try { storage?.setItem(KEY, JSON.stringify(timers)); } catch { /* Keep the session state. */ }
   }
+
+  return {
+    get: key => timers[key] ?? { minutes: 20 },
+    entries: () => Object.entries(timers),
+    write,
+    configure: (key, minutes) => write(key, { minutes }),
+  };
+}
+
+export function createTimers({ persistent, onTick }) {
+  let storage;
+  let audio;
+  try {
+    if (persistent) storage = window.localStorage;
+  } catch { /* Storage can be unavailable on this device. */ }
+  const { get, entries, write, configure } = createTimerStore(storage);
 
   function enableAudio() {
     const Audio = window.AudioContext || window.webkitAudioContext;
@@ -40,11 +53,9 @@ export function createTimers({ persistent, onTick }) {
     tone.onended = () => { tone.disconnect(); volume.disconnect(); };
   }
 
-  const get = key => timers[key] ?? { minutes: 20 };
-
   function tick() {
     const now = Date.now();
-    const expired = Object.entries(timers).filter(([, timer]) => timer.end <= now && !timer.rang);
+    const expired = entries().filter(([, timer]) => timer.end <= now && !timer.rang);
     for (const [key, timer] of expired) write(key, { ...timer, rang: true });
     if (expired.length) chime();
     onTick(now);
@@ -52,15 +63,21 @@ export function createTimers({ persistent, onTick }) {
 
   setInterval(tick, 500);
   return {
-    get, tick,
-    configure: (key, minutes) => write(key, { minutes }),
-    start(key) {
-      enableAudio();
-      const { minutes } = get(key);
-      write(key, { minutes, end: Date.now() + minutes * 60_000 });
+    get, tick, configure,
+    toggle(key) {
+      const { minutes, end, remaining, rang } = get(key);
+      if (rang) return;
+      const now = Date.now();
+      if (end > now) write(key, { minutes, remaining: end - now });
+      else if (!end) {
+        enableAudio();
+        write(key, { minutes, end: now + (remaining ?? minutes * 60_000) });
+      }
       tick();
     },
-    stop(key) { write(key, { minutes: get(key).minutes }); },
-    clear: key => write(key, null),
+    reset(key) {
+      const { minutes, end, remaining } = get(key);
+      if (end || remaining !== undefined) configure(key, minutes);
+    },
   };
 }

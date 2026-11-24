@@ -133,15 +133,15 @@ try {
   assert.deepEqual(errors, []);
 
   const url = 'http://127.0.0.1:' + server.address().port + prefix;
-  const ready = "document.querySelector('[data-id=t4]') && !document.querySelector('.today-timer .today-time').disabled";
+  const ready = "document.querySelector('[data-id=t4]') && document.querySelector('.today-timer .today-time:not(:disabled)')";
   const screenshots = process.env.PRP_SCREENSHOTS;
   if (screenshots) await mkdir(screenshots, { recursive: true });
-  async function capture(name, width, height) {
+  async function capture(name, width, height, viewportOnly = false) {
     if (!screenshots) return;
     const { cssContentSize } = await send('Page.getLayoutMetrics');
     const { data } = await send('Page.captureScreenshot', {
       format: 'png', fromSurface: true, captureBeyondViewport: true,
-      clip: { x: 0, y: 0, width, height: Math.max(height, cssContentSize.height), scale: 1 },
+      clip: { x: 0, y: 0, width, height: viewportOnly ? height : Math.max(height, cssContentSize.height), scale: 1 },
     });
     await writeFile(join(screenshots, name + '.png'), Buffer.from(data, 'base64'));
   }
@@ -208,7 +208,7 @@ try {
   assert.equal(await visible('[data-id=t4].is-done'), true);
   await click('[data-id=t4] .today-check');
   await idle();
-  await menu('t4', 'Комментарий / блокер');
+  await menu('t4', '💬 Комментарий / блокер');
   await evaluate("document.querySelector('textarea').value = '<b>Fixture note</b>'");
   await click('dialog button[type=submit], dialog .primary');
   await idle();
@@ -258,15 +258,40 @@ try {
   await idle();
   assert.equal(await evaluate("document.querySelector('.today-reminder').textContent.includes('One-off browser reminder')"), true);
 
+  const focusTitle = () => evaluate("document.querySelector('.focus-view[open] h1')?.textContent");
+  const focusIdle = () => waitFor(() => visible('.focus-view[open][aria-busy=false]'));
+  async function setTimerLength(value) {
+    await click('.focus-timer .today-time');
+    await evaluate("document.querySelector('.focus-timer input').value = " + JSON.stringify(value));
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await waitFor(() => visible('.focus-timer input[hidden]'));
+  }
+  async function waitForFocusClose() {
+    await waitFor(() => evaluate("!document.querySelector('.focus-view[open]') && !history.state?.prpFocus"));
+  }
+
   await click('[data-id=t1] .today-time');
-  await evaluate("document.querySelector('dialog input').value = '1'");
-  await click('dialog .primary');
+  assert.equal(await focusTitle(), 'Read chapter 3');
+  await setTimerLength('1');
+  await click('.focus-close');
+  await waitForFocusClose();
+  assert.equal(await evaluate("document.querySelector('[data-id=t1] .today-time').textContent"), '1 мин');
   await evaluate("window.chimes = 0; const oscillator = AudioContext.prototype.createOscillator; AudioContext.prototype.createOscillator = function () { window.chimes++; return oscillator.call(this); }");
   const startPoint = await evaluate("(() => { const button = document.querySelector('[data-id=t1] .today-timer .today-icon'); button.scrollIntoView({ block: 'center' }); const r = button.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()");
   await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [startPoint] });
   await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await waitFor(() => visible('[data-id=t1] .timer.run'));
-  assert.equal(await evaluate("document.querySelector('[data-id=t1] .today-timer .today-icon').textContent"), '■');
+  assert.equal(await evaluate("document.querySelector('[data-id=t1] .today-timer .today-icon').textContent"), '⏸');
+  await click('[data-id=t1] .today-time');
+  assert.equal(await visible('.focus-timer .timer.run'), true);
+  await click('.focus-timer .tbtn');
+  assert.equal(await visible('.focus-timer .timer.run'), false);
+  assert.match(await evaluate("document.querySelector('.focus-timer .today-time').textContent"), /^\d+:\d{2}$/);
+  await click('.focus-timer .tbtn');
+  assert.equal(await visible('.focus-timer .timer.run'), true);
+  await click('.focus-close');
+  await waitForFocusClose();
   await evaluate("const realNow = Date.now; Date.now = () => realNow() + 61_000");
   await waitFor(() => evaluate("document.querySelector('dialog[open] h2')?.textContent === 'Отметить выполненным?'"));
   assert.equal(await evaluate('window.chimes'), 1);
@@ -280,6 +305,49 @@ try {
   await send('Page.reload');
   await waitFor(() => evaluate(ready));
   assert.equal(await visible('[data-id=t1].is-done'), false);
+
+  const todoId = 'td-1900000001';
+  await click('[data-id=' + todoId + '] summary');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('[data-id=" + todoId + "] .rowmenu button')].map(button => button.textContent)"),
+    ['⤢ Фокус', '💬 Комментарий / блокер', '⭐ Важное']);
+  await menu('t4', '⤢ Фокус');
+  assert.equal(await focusTitle(), 'Call the plumber');
+  await evaluate("document.querySelector('.focus-notes textarea').value = '<b>Saved with completion</b>'");
+  await click('.focus-actions .primary');
+  await focusIdle();
+  assert.equal(await focusTitle(), 'Return library book');
+  assert.equal(await visible('.focus-actions button:nth-child(2)[hidden]'), true);
+  await click('.focus-actions button:last-child');
+  assert.equal(await focusTitle(), 'Read chapter 3');
+  assert.equal(await evaluate("document.querySelector('.focus-subtitle').textContent"), 'Read the chapter and write a short summary.');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.focus-links a')].map(link => [link.textContent, link.protocol, link.rel])"),
+    [['Chapter notes', 'https:', 'noopener noreferrer']]);
+  await click('.focus-actions button:last-child');
+  assert.equal(await focusTitle(), 'Draft landing copy');
+  await click('.focus-actions button:last-child');
+  assert.equal(await focusTitle(), 'Return library book');
+  await evaluate("document.querySelector('.focus-notes textarea').value = 'Saved on Back'");
+  await evaluate('history.back()');
+  await waitForFocusClose();
+  assert.equal(await evaluate("document.querySelector('[data-id=" + todoId + "]').textContent.includes('Saved on Back')"), true);
+  assert.equal(await evaluate("document.querySelector('[data-id=t4]').textContent.includes('<b>Saved with completion</b>')"), true);
+  assert.equal(await visible('[data-id=t4] b'), false);
+
+  await click('[data-id=t2] .today-time');
+  await click('.focus-actions button:nth-child(2)');
+  await focusIdle();
+  assert.equal(await focusTitle(), 'Return library book');
+  await click('.focus-actions .primary');
+  await focusIdle();
+  assert.equal(await focusTitle(), 'Read chapter 3');
+  await click('.focus-actions .primary');
+  await focusIdle();
+  assert.equal(await focusTitle(), 'На сегодня всё');
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await waitForFocusClose();
+  await send('Page.reload');
+  await waitFor(() => evaluate(ready));
 
   // Run the new sections through the loopback fixture client, including returning to Today.
   const workIdle = () => waitFor(() => evaluate("document.querySelector('#objects-panel .work-content')?.getAttribute('aria-busy') === 'false'"));
@@ -406,6 +474,32 @@ try {
   await waitFor(() => evaluate('window.getCount > window.beforeRefresh'));
   await idle();
 
+  await click('[data-id=t1] .today-time');
+  await setTimerLength('9');
+  await evaluate("document.querySelector('.focus-notes textarea').value = 'One fixture commit'");
+  await click('.focus-actions .primary');
+  await waitFor(() => evaluate('window.puts.length === 2'));
+  assert.deepEqual(await evaluate(`(() => {
+    const write = window.puts[1];
+    const item = JSON.parse(atob(write.content)).items.find(item => item.id === 't1');
+    return [write.message, item.done, item.comment];
+  })()`), ['lab: web — complete item', true, 'One fixture commit']);
+  await evaluate('window.finishWrite(false)');
+  await focusIdle();
+  assert.equal(await focusTitle(), 'Read chapter 3');
+  assert.equal(await evaluate("document.querySelector('.focus-notes textarea').value"), 'One fixture commit');
+  assert.equal(await visible('.focus-view .notice.error:not([hidden])'), true);
+  await click('.focus-actions .primary');
+  await waitFor(() => evaluate('window.puts.length === 3'));
+  await evaluate('window.finishWrite(true)');
+  await focusIdle();
+  assert.equal(await focusTitle(), 'Draft landing copy');
+  await click('.focus-close');
+  await waitForFocusClose();
+  await send('Page.reload');
+  await waitFor(() => evaluate(ready));
+  assert.equal(await evaluate("document.querySelector('[data-id=t1] .today-time').textContent"), '9 мин');
+
   // Exercise both integrations using fixture tasks and independent GitHub and routine responses.
   const codexFixture = JSON.parse(await readFile(new URL('fixtures/lab/codex.json', root), 'utf8'));
   const mockMore = data => {
@@ -473,6 +567,10 @@ try {
   assert.equal(await evaluate("document.querySelector('#routine-token').value"), '');
   await click('[data-tab=more]');
   await waitFor(() => visible('[data-codex-status=ready]'));
+  assert.equal(await evaluate("document.querySelector('.instant-help p').getClientRects().length"), 0);
+  await click('.instant-help summary');
+  assert.equal(await evaluate("document.querySelector('.instant-help p').getClientRects().length > 0"), true);
+  await click('.instant-help summary');
   assert.equal(await visible('[data-codex-id=cx-2] b'), false);
   assert.match(await evaluate("document.querySelector('[data-codex-id=cx-2]').textContent"), /<b>Review fixture<\/b>/);
   assert.equal(await evaluate("document.querySelector('[data-codex-id=cx-2] a').href"), 'https://github.com/owner/other/pull/42');
@@ -566,6 +664,18 @@ try {
           const name = 'design-' + route + '-' + width + '-' + theme;
           await capture(name, width, height);
           const html = await evaluate('(' + consoleMarkup.toString() + ')(' + JSON.stringify(route) + ',' + JSON.stringify(theme) + ')');
+          if (route === 'today') {
+            await click('[data-id=t4] .today-menu summary');
+            await waitFor(() => visible('[data-id=t4] .today-menu[open]'));
+            await capture('focus-menu-' + width + '-' + theme, width, height);
+            await click('[data-id=t4] .today-menu summary');
+            await click('[data-id=t1] .today-time');
+            await click('.focus-timer .tbtn');
+            await waitFor(() => visible('.focus-timer .timer.run'));
+            await capture('focus-timer-' + width + '-' + theme, width, height, true);
+            await click('.focus-close');
+            await waitForFocusClose();
+          }
           await send('Page.navigate', { url: 'about:blank' });
           await waitFor(() => evaluate("location.href === 'about:blank'"));
           const { frameTree } = await send('Page.getFrameTree');

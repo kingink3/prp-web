@@ -1,10 +1,12 @@
-import { parseFrontMatter, serializeFrontMatter } from './frontmatter.js';
+import { parseFrontMatter } from './frontmatter.js';
+import { createFocusView } from './focus-view.js';
 import { createTimers } from './timers.js';
 import { strings } from './strings.js';
 import { localIsoMinutes, today } from './util.js';
 import {
   addReminder, addTodo, carryDue, clearDone, completeReminder, emptyLists, planGroups, planPath,
-  planProgress, referencePath, reminderPath, removeItem, reorder, rowRank, setDone, setImportant,
+  focusOrder, nextFocusRow, planProgress, referencePath, reminderPath, reorder, rowActions, rowRank,
+  setDone, setImportant,
   setNotes, snooze, splitReminders, todoPath, unpostpone, postpone,
 } from './today-data.js';
 
@@ -41,6 +43,7 @@ function formControl(label, control) {
 const json = data => JSON.stringify(data, null, 2) + '\n';
 const dayLabel = date => date.slice(8, 10) + '.' + date.slice(5, 7) + '.' + date.slice(0, 4);
 const atLabel = at => dayLabel(at) + ' · ' + at.slice(11, 16);
+const focusHistoryKey = 'prpFocus';
 
 export function createTodayView(panel, { fixture, onResponse }) {
   const heading = el('div', undefined, 'today-heading');
@@ -131,7 +134,8 @@ export function createTodayView(panel, { fixture, onResponse }) {
   dialogActions.append(dialogSubmit, dialogCancel);
   dialogForm.append(dialogFields, dialogActions);
   dialog.append(dialogTitle, dialogForm);
-  panel.append(heading, toast, status, body, dialog);
+  const focus = createFocusView(focusAction);
+  panel.append(heading, toast, status, body, dialog, focus.element);
 
   let source;
   let scope;
@@ -146,6 +150,8 @@ export function createTodayView(panel, { fixture, onResponse }) {
   let dialogDismiss;
   let toastTimeout;
   let timerRows = [];
+  let focusSession;
+  let focusTimer;
   const timers = createTimers({ persistent: !fixture, onTick: updateTimers });
   const now = () => fixture && data ? new Date(data[planPath].date + 'T10:30') : new Date();
 
@@ -218,6 +224,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
         }
       }));
       if (version !== revision) return;
+      if (focusSession && data[planPath].date !== plan.date) closeFocus();
       data = { ...snapshot, [planPath]: plan };
       statuses = new Map(states);
       status.textContent = '';
@@ -278,41 +285,35 @@ export function createTodayView(panel, { fixture, onResponse }) {
     }
   }
 
-  // To-dos and ideas are separate files. Adding an idea copies its source text in one commit.
-  async function copyToIdea(item) {
-    if (pending) return;
-    pending = true;
-    render();
-    const at = now();
-    const day = today(at);
-    const id = 'idea-' + day.replaceAll('-', '') + '-' + crypto.randomUUID();
-    const attributes = {
-      id, type: 'idea', title: item.text, lang: 'ru', area: 'projects', purpose: 'useful',
-      status: 'new', created: day, last_touched: day, source: 'widget', origin: 'owner',
-      tags: [], links: [], next_step: '',
-    };
-    const text = serializeFrontMatter({ attributes, body: item.comment ? item.comment + '\n' : '' });
-    const client = source;
-    try {
-      await client.update('ideas/' + id + '.md', existing => existing || text, 'lab: web — copy to-do to ideas', { initial: '' });
-      if (source === client) message(s.ideaAdded);
-    } catch {
-      if (source === client) message(s.saveError, true);
-    } finally {
-      if (source === client) {
-        pending = false;
-        onResponse(client);
-        render();
-        if (refreshAfterSave) {
-          refreshAfterSave = false;
-          refresh();
-        }
-      }
-    }
-  }
-
   function timerKey(row) {
     return JSON.stringify([scope, row.path, row.path === planPath ? data[planPath].date : null, row.item.id]);
+  }
+
+  function editRow(row, mutate, commit) {
+    return apply(row.path, list => mutate(list, row.key, row.item.id), commit);
+  }
+
+  function saveNotes(row, notes) {
+    return editRow(row, (list, key, id) => setNotes(list, key, id, notes), 'edit notes');
+  }
+
+  async function finishRow(row, done, notes = {}, spent = 0) {
+    const at = now();
+    const key = timerKey(row);
+    const commit = done ? (spent ? 'complete timed item' : 'complete item') : 'reopen item';
+    const ok = await editRow(row, (list, field, id) =>
+      setDone(setNotes(list, field, id, notes), field, id, done, at, spent), commit);
+    if (ok && done) timers.reset(key);
+    return ok;
+  }
+
+  async function postponeRow(row, notes = {}) {
+    const at = now();
+    const key = timerKey(row);
+    const ok = await editRow(row, (list, field, id) =>
+      postpone(setNotes(list, field, id, notes), id, at), 'postpone item');
+    if (ok) timers.reset(key);
+    return ok;
   }
 
   function editNotes(row) {
@@ -327,47 +328,152 @@ export function createTodayView(panel, { fixture, onResponse }) {
       for (const key of Object.keys(fields)) {
         if (fields[key].value !== (row.item[key] ?? '')) notes[key] = fields[key].value;
       }
-      apply(row.path, list => setNotes(list, row.key, row.item.id, notes), 'edit notes');
+      saveNotes(row, notes);
     });
   }
 
-  function editDuration(key) {
-    const field = input('number', s.duration);
-    field.min = '1';
-    field.max = '1440';
-    field.step = '1';
-    field.required = true;
-    field.value = timers.get(key).minutes;
-    openDialog(s.timer, [formControl(s.duration, field)], () => {
-      timers.configure(key, field.valueAsNumber);
-      updateTimers(Date.now());
-    });
-    field.select();
+  function makeTimer(row, inFocus = false) {
+    const key = timerKey(row);
+    const timer = el('div', undefined, 'timer today-timer');
+    const lengthInput = inFocus ? input('number', s.duration) : null;
+    const duration = button('', () => {
+      if (!lengthInput) return openFocus(row, duration);
+      lengthInput.value = timers.get(key).minutes;
+      lengthInput.hidden = false;
+      lengthInput.focus();
+      lengthInput.select();
+      duration.hidden = true;
+    }, { label: inFocus ? s.duration : s.openFocus, className: 'today-time' });
+    const control = button('', () => timers.toggle(key), { className: 'today-icon tbtn' });
+    if (lengthInput) {
+      lengthInput.className = 'timer-min';
+      lengthInput.min = '1';
+      lengthInput.max = '1440';
+      lengthInput.step = '1';
+      lengthInput.required = true;
+      lengthInput.hidden = true;
+      lengthInput.addEventListener('blur', () => {
+        const { end, minutes } = timers.get(key);
+        if (!end && lengthInput.validity.valid && lengthInput.valueAsNumber !== minutes) {
+          timers.configure(key, lengthInput.valueAsNumber);
+        }
+        lengthInput.hidden = true;
+        duration.hidden = false;
+        updateTimers(Date.now());
+      });
+      lengthInput.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        if (lengthInput.reportValidity()) {
+          lengthInput.blur();
+          duration.focus();
+        }
+      });
+      timer.append(duration, lengthInput, control);
+    } else timer.append(duration, control);
+    return { row, key, timer, duration, control, inFocus };
   }
 
   function updateTimers(time) {
-    for (const entry of timerRows) {
+    for (const entry of focusTimer ? [...timerRows, focusTimer] : timerRows) {
       const timer = timers.get(entry.key);
-      const seconds = Math.max(0, Math.ceil((timer.end - time) / 1000));
-      entry.duration.textContent = timer.end
-        ? Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') : s.minutes(timer.minutes);
+      const remaining = timer.end ? Math.max(0, timer.end - time) : timer.remaining;
+      const seconds = Math.ceil(remaining / 1000);
+      entry.duration.textContent = remaining === undefined ? s.minutes(timer.minutes) :
+        Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
       entry.timer.classList.toggle('run', Boolean(timer.end) && !timer.rang);
-      entry.duration.disabled = Boolean(timer.end);
-      entry.control.textContent = timer.end ? '■' : '▶';
-      entry.control.setAttribute('aria-label', timer.end ? s.stop : s.start);
-      entry.control.disabled = Boolean(timer.rang);
+      entry.duration.disabled = entry.inFocus ? Boolean(timer.end) || Boolean(focusSession?.busy) : pending;
+      entry.control.textContent = timer.end ? '⏸' : '▶';
+      entry.control.setAttribute('aria-label', timer.end ? s.pause : s.start);
+      entry.control.disabled = Boolean(timer.rang) || (entry.inFocus ? Boolean(focusSession?.busy) : pending);
     }
-    if (!active || pending || dialog.open || document.hidden) return;
-    const expired = timerRows.find(entry => timers.get(entry.key).rang);
+    if (!active || pending || focusSession?.busy || dialog.open || document.hidden) return;
+    const entries = focusSession ? (focusTimer ? [focusTimer] : []) : timerRows;
+    const expired = entries.find(entry => timers.get(entry.key).rang);
     if (!expired) return;
     const { row, key } = expired;
     const { minutes } = timers.get(key);
-    openDialog(s.timerEnded, [el('p', row.item.title ?? row.item.text)], async () => {
-      const at = now();
-      const ok = await apply(row.path, list => setDone(list, row.key, row.item.id, true, at, minutes), 'complete timed item');
-      if (ok) timers.clear(key);
-    }, s.markDone, s.dismiss, () => timers.stop(key));
+    openDialog(s.timerEnded, [el('p', row.item.title ?? row.item.text)], () => {
+      if (focusSession) focusAction('done', { spent: minutes });
+      else finishRow(row, true, {}, minutes);
+    }, s.markDone, s.dismiss, () => timers.reset(key));
   }
+
+  function focusQueue() {
+    return focusOrder(planGroups(data[planPath], data[todoPath], statuses));
+  }
+
+  function showFocusRow(row) {
+    focusSession.row = row;
+    focusTimer = row ? makeTimer(row, true) : undefined;
+    focus.show(row, focusTimer?.timer);
+    updateTimers(Date.now());
+  }
+
+  function openFocus(row, opener) {
+    if (pending || focusSession) return;
+    if (!history.state?.[focusHistoryKey]) history.pushState({ ...history.state, [focusHistoryKey]: true }, '');
+    focusSession = { row, openedFrom: row, opener: opener.matches('summary') ? '.today-menu summary' : '.today-time' };
+    showFocusRow(row);
+  }
+
+  function closeFocus({ restore = true, goBack = true } = {}) {
+    const session = focusSession;
+    if (!session) return;
+    const { opener, openedFrom } = session;
+    focusSession = focusTimer = undefined;
+    if (dialog.open) dialog.close();
+    focus.close();
+    if (goBack && history.state?.[focusHistoryKey]) history.back();
+    if (restore) {
+      const row = [...panel.querySelectorAll('.today-row')].find(node =>
+        node.dataset.id === openedFrom.item.id && node.dataset.path === openedFrom.path);
+      const control = row?.querySelector(opener);
+      (control ?? row?.querySelector('.today-check') ?? refreshButton).focus({ preventScroll: true });
+    }
+  }
+
+  async function focusAction(action, { back = false, spent = 0 } = {}) {
+    const session = focusSession;
+    if (!session) return;
+    if (back) session.back = true;
+    if (session.busy) return;
+    const { row } = session;
+    if (!row) return closeFocus({ goBack: !session.back });
+    const before = focusQueue();
+    const notes = focus.readNotes();
+    session.busy = true;
+    focus.busy(true);
+    focus.showError('');
+    updateTimers(Date.now());
+
+    let ok;
+    if (action === 'done') ok = await finishRow(row, true, notes, spent);
+    else if (action === 'postpone') ok = await postponeRow(row, notes);
+    else ok = !Object.keys(notes).length || await saveNotes(row, notes);
+
+    if (focusSession !== session) return;
+    session.busy = false;
+    focus.busy(false);
+    if (!ok) {
+      if (session.back && !history.state?.[focusHistoryKey]) {
+        history.pushState({ ...history.state, [focusHistoryKey]: true }, '');
+        session.back = false;
+      }
+      focus.showError(s.saveError);
+      updateTimers(Date.now());
+      return;
+    }
+    if (action === 'close' || session.back) closeFocus({ goBack: !session.back });
+    else showFocusRow(nextFocusRow(before, row, focusQueue()));
+  }
+
+  window.addEventListener('popstate', () => {
+    const [route] = location.hash.slice(1).split('/');
+    if (focusSession && !history.state?.[focusHistoryKey] && (!route || route === 'today')) {
+      focusAction('close', { back: true });
+    }
+  });
 
   function attachImportance(node, toggle) {
     let press;
@@ -393,7 +499,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
   }
 
   function dragHandle(node, row, peers) {
-    const handle = button('⠿', () => {}, { label: s.reorder, className: 'today-icon today-drag', disabled: pending || peers.length < 2 });
+    const handle = button('⠿', () => {}, { label: s.reorder, className: 'today-icon today-drag', disabled: pending });
     let target;
     let pointer;
     function moveTo(id) {
@@ -449,18 +555,16 @@ export function createTodayView(panel, { fixture, onResponse }) {
   }
 
   function renderRow(row, group) {
-    const { item, path, key } = row;
+    const { item, path } = row;
     const node = el('li', undefined, 'row today-row');
     node.dataset.kind = path === todoPath ? 'todo' : item.kind ?? 'custom';
     node.classList.toggle('imp', Boolean(item.important));
     node.dataset.id = item.id;
     node.dataset.path = path;
     node.classList.toggle('is-done', Boolean(item.done));
-    const set = (edit, what) => apply(path, list => edit(list, key, item.id), what);
-    const complete = button(item.done ? '✓' : '', () => {
-      const at = now();
-      set((list, key, id) => setDone(list, key, id, !item.done, at), item.done ? 'reopen item' : 'complete item');
-    }, { label: item.done ? s.undoDone : s.markDone, className: 'chk today-check', disabled: pending });
+    const complete = button(item.done ? '✓' : '', () => finishRow(row, !item.done), {
+      label: item.done ? s.undoDone : s.markDone, className: 'chk today-check', disabled: pending,
+    });
     complete.setAttribute('aria-pressed', String(Boolean(item.done)));
     const info = el('div', undefined, 'today-row-info');
     const title = el('p', undefined, 'today-row-title');
@@ -477,50 +581,57 @@ export function createTodayView(panel, { fixture, onResponse }) {
       if (item[field]?.trim()) info.append(el('p', s.noteLine(s[field], item[field]), 'today-muted'));
     }
 
-    const trailing = el('div', undefined, 'today-row-actions');
-    if (!item.done) {
-      const timer = el('div', undefined, 'timer today-timer');
-      const timerId = timerKey(row);
-      const duration = button('', () => editDuration(timerId), { label: s.duration, className: 'today-time' });
-      const control = button('', () => {
-        if (timers.get(timerId).end) timers.stop(timerId);
-        else timers.start(timerId);
-        updateTimers(Date.now());
-      }, { className: 'today-icon tbtn' });
-      timerRows.push({ row, key: timerId, timer, duration, control });
-      timer.append(duration, control);
-      trailing.append(timer);
-    }
-    const toggleImportant = () => {
-      set((list, key, id) => setImportant(list, key, id, !item.important), 'change priority');
-    };
+    const toggleImportant = () =>
+      editRow(row, (list, key, id) => setImportant(list, key, id, !item.important), 'change priority');
     attachImportance(info, toggleImportant);
-    const menu = el('details', undefined, 'today-menu');
-    const menuLabel = el('summary', '…', 'btn small');
-    menuLabel.setAttribute('aria-label', s.rowActions);
-    const commands = el('div', undefined, 'today-menu-items');
-    function command(text, action) {
-      commands.append(button(text, () => { menu.open = false; action(); }, { disabled: pending }));
+    const leading = el('div', undefined, 'today-row-tools');
+    leading.append(complete);
+    const peers = group.filter(peer => peer.path === path && rowRank(peer.item) === rowRank(item));
+    if (peers.length > 1) leading.append(dragHandle(node, row, peers));
+    node.append(leading, info);
+    if (!item.done) {
+      const timer = makeTimer(row);
+      timerRows.push(timer);
+      const trailing = el('div', undefined, 'today-row-actions');
+      trailing.append(timer.timer, rowMenu(row, toggleImportant));
+      node.append(trailing);
     }
-    if (path === planPath) command(s.postpone, () => {
-      const at = now();
-      apply(path, list => postpone(list, item.id, at), 'postpone item');
-    });
-    command(s.notes, () => editNotes(row));
-    command(item.important ? s.unimportant : s.makeImportant, toggleImportant);
-    if (path === todoPath) command(s.toIdea, () => copyToIdea(item));
-    command(s.remove, () => set(removeItem, 'remove item'));
-    menu.append(menuLabel, commands);
+    return node;
+  }
+
+  function rowMenu(row, toggleImportant) {
+    const menu = el('details', undefined, 'today-menu');
+    const trigger = el('summary', '⋯', 'tbtn more');
+    trigger.setAttribute('aria-label', s.rowActions);
+    const commands = el('div', undefined, 'rowmenu');
+    const callbacks = {
+      focus: () => openFocus(row, trigger),
+      notes: () => editNotes(row),
+      makeImportant: toggleImportant,
+      unimportant: toggleImportant,
+      postpone: () => postponeRow(row),
+    };
+    for (const action of rowActions(row)) {
+      commands.append(button(action === 'notes' ? s.menuNotes : s[action], () => {
+        menu.open = false;
+        trigger.focus({ preventScroll: true });
+        callbacks[action]();
+      }, { disabled: pending }));
+    }
+    menu.append(trigger, commands);
     menu.addEventListener('toggle', () => {
       if (!menu.open) return;
       for (const other of panel.querySelectorAll('.today-menu[open]')) {
         if (other !== menu) other.open = false;
       }
     });
-    trailing.append(menu, dragHandle(node, row, group.filter(peer =>
-      peer.path === path && rowRank(peer.item) === rowRank(item))));
-    node.append(complete, info, trailing);
-    return node;
+    menu.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !menu.open) return;
+      event.preventDefault();
+      menu.open = false;
+      trigger.focus();
+    });
+    return menu;
   }
 
   function renderReminders() {
@@ -630,6 +741,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
     show(client, namespace) {
       active = true;
       if (source !== client || scope !== namespace) {
+        closeFocus({ restore: false, goBack: false });
         source = client;
         scope = namespace;
         data = undefined;
@@ -648,6 +760,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
     },
     hide() {
       active = false;
+      closeFocus({ restore: false, goBack: false });
       if (dialog.open) dialog.close();
     },
   };
