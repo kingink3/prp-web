@@ -103,14 +103,14 @@ try {
   assert.equal(await evaluate("document.querySelector('#token').type"), 'password');
   assert.equal(await evaluate("document.querySelector('#branch').value"), 'main');
   assert.equal(await evaluate('document.documentElement.scrollWidth === innerWidth'), true);
-  assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(17, 24, 32)');
+  assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(23, 24, 27)');
 
   await evaluate("location.hash = '#more'");
   await waitFor(() => evaluate("document.title === 'Ещё · PRP'"));
   await evaluate("document.querySelector('.menu-link').click()");
   await waitFor(() => evaluate("document.title === 'Настройки · PRP'"));
   await evaluate("document.querySelector('#theme').value = 'light'; document.querySelector('#theme').dispatchEvent(new Event('change'))");
-  assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(243, 245, 247)');
+  assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(246, 247, 249)');
   await evaluate("document.querySelector('#repository').value = 'owner/repo'; document.querySelector('#token').value = 'test-only'");
   for (const status of [401, 403, 404, 200, 304]) {
     await evaluate('window.mockStatus = ' + status + "; document.querySelector('#check').click()");
@@ -145,19 +145,36 @@ try {
     await writeFile(join(screenshots, name + '.png'), Buffer.from(data, 'base64'));
   }
 
-  for (const [width, height] of [[390, 844], [1024, 900]]) {
+  await send('Emulation.setDeviceMetricsOverride', { width: 320, height: 640, deviceScaleFactor: 1, mobile: true });
+  await send('Page.navigate', { url: url + '?fixtures=1#settings' });
+  await waitFor(() => evaluate("document.title === 'Настройки · PRP'"));
+  assert.ok(await evaluate("document.querySelector('.tabs').scrollLeft > 0"));
+  const tabInView = `(() => {
+    const active = document.querySelector('.tabs [aria-current]');
+    const tab = active.getBoundingClientRect();
+    const track = active.parentElement.getBoundingClientRect();
+    return tab.left >= track.left && tab.right <= track.right;
+  })()`;
+  assert.equal(await evaluate(tabInView), true);
+  await evaluate("location.hash = '#today'");
+  await waitFor(() => evaluate(ready));
+  assert.equal(await evaluate(tabInView), true);
+
+  for (const [width, height] of [[390, 844], [1280, 900]]) {
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 });
     await send('Page.navigate', { url: url + '?fixtures=1#today' });
     await waitFor(() => evaluate(ready));
     const viewport = await evaluate('({ content: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth })');
     assert.equal(viewport.content, viewport.viewport, width + ' px viewport has no horizontal page overflow');
     assert.equal(await evaluate("new Set([...document.querySelectorAll('.tabs a')].map(tab => tab.offsetTop)).size"), 1);
-    assert.equal(await evaluate("document.querySelector('[data-tab=more]').getBoundingClientRect().right <= innerWidth"), true);
+    assert.equal(await evaluate(tabInView), true);
     assert.equal(await evaluate("document.querySelector('.today-count').textContent"), 'Сделано 1/4 · 0/75 мин');
     assert.equal(await evaluate("document.body.textContent.includes('позже: 1')"), true);
     assert.equal(await evaluate("document.querySelector('[data-id=t4] .today-star').textContent"), '★');
     assert.equal(await evaluate('window.lastGitHubRequest'), undefined);
     if (width === 390) {
+      assert.ok(await evaluate("document.querySelector('[data-id=t4] .today-menu summary').offsetHeight >= 40"));
+      assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-id=t4]')).borderLeftWidth"), '4px');
       const duration = await evaluate(`(() => {
         const duration = document.querySelector('[data-id=t4] .today-time');
         const range = document.createRange();
@@ -274,6 +291,7 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('.work-tabs button').length"), 5);
   await evaluate("[...document.querySelectorAll('.work-tabs button')].find(button => button.textContent === 'Проекты').click()");
   assert.match(await evaluate("document.querySelector('.work-object').textContent"), /Sample app.*Draft landing copy.*1\/3.*1 дн\. назад/);
+  assert.equal(await evaluate("document.querySelector('.work-object progress').value"), 1);
   await workCapture('directions');
   await click('.work-object');
   await waitFor(() => visible('.work-tasks'));
@@ -328,6 +346,7 @@ try {
   await click('.calendar-day.has-data:not([aria-current])');
   await waitFor(() => evaluate("document.querySelector('.calendar-detail').textContent.includes('Old task')"));
   assert.match(await evaluate("document.querySelector('.calendar-detail').textContent"), /Old task.*Review the draft.*Return a library book/);
+  assert.equal(await evaluate("document.querySelector('.calendar-day[aria-pressed=true]').classList.contains('lvl2')"), true);
   await workCapture('calendar');
   await evaluate("const search = document.querySelector('.calendar-search input'); search.value = 'review'; search.dispatchEvent(new Event('input'))");
   await waitFor(() => evaluate("document.querySelector('.calendar-search').textContent.includes('Review December')"));
@@ -516,6 +535,33 @@ try {
   assert.equal(await evaluate("JSON.parse(localStorage.getItem('prp.routine')).token"), undefined);
   assert.equal(await evaluate("localStorage.getItem('prp.githubToken')"), 'fixture-github-token');
   assert.deepEqual(errors, []);
+  if (screenshots) {
+    const routes = [
+      ['today', '[data-id=t4]'],
+      ['directions', '.work-object'],
+      ['calendar', '.calendar-day.lvl2'],
+      ['settings', '#settings-panel:not([hidden]) #theme'],
+    ];
+    for (const [width, height] of [[390, 844], [1280, 900]]) {
+      await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 });
+      for (const theme of ['light', 'dark']) {
+        for (const [route, selector] of routes) {
+          await send('Page.navigate', { url: url + '?fixtures=1#settings' });
+          await waitFor(() => evaluate("document.title === 'Настройки · PRP'"));
+          await evaluate(`(() => {
+            const field = document.querySelector('#theme');
+            field.value = '${theme}';
+            field.dispatchEvent(new Event('change'));
+            location.hash = '#${route}';
+          })()`);
+          await waitFor(() => visible(selector));
+          assert.equal(await evaluate('document.documentElement.scrollWidth'), width);
+          assert.equal(await evaluate(tabInView), true);
+          await capture('design-' + route + '-' + width + '-' + theme, width, height);
+        }
+      }
+    }
+  }
   console.log('Browser Settings, Today, Directions, Ideas, Calendar and More checks passed');
 } finally {
   socket?.close();
