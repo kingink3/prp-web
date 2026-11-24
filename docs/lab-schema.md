@@ -178,6 +178,10 @@ precise «Done when». Without `effort` it is derived from the task size (`labct
 Status: `ready` (prepared, owner to send) → `sent` (owner copied it to Codex) → `review` (PR open,
 waiting for Claude) → `changes` (Claude asked for fixes; `fix` holds the follow-up text to paste into
 the same Codex task) → `merged` | `cancelled`. The prompt is built by `labctl.codex_prompt()`.
+The web prompt includes the task ID and title, repository, model and effort, task text, and acceptance
+criteria. It includes the line “Read AGENTS.md (and README) of this repository first and follow them.”
+The rules include the task branch when provided, the task ID in the PR title, and verification and PR
+instructions. If a legacy record has no model or effort, the web client uses GPT-6.2 Sol and medium.
 CI (`.github/workflows/codex.yml`) moves tasks to `review` / `merged` from PR events.
 
 ## todo.json (repo root)

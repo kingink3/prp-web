@@ -18,6 +18,12 @@ export function link(text, href, className) {
   return node;
 }
 
+export function showNotice(element, message, kind = '') {
+  element.textContent = message;
+  element.className = kind ? 'notice ' + kind : 'notice';
+  element.hidden = !message;
+}
+
 export function appendLinkedText(parent, text) {
   const pattern = /\[([^\]\r\n]+)\]\(([^()\s]*(?:\([^()\s]*\)[^()\s]*)*)\)|https?:\/\/[^\s<>"'`]+/gi;
   let start = 0;
