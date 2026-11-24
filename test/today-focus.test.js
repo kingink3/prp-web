@@ -13,9 +13,9 @@ const ids = rows => rows.map(row => row.item.id);
 
 test('open plan rows offer four menu actions and to-dos omit postponing and copying to ideas', () => {
   const [task, todo, learning, project] = order();
-  assert.deepEqual(rowActions(task), ['focus', 'notes', 'unimportant', 'postpone']);
-  for (const row of [learning, project]) assert.deepEqual(rowActions(row), ['focus', 'notes', 'makeImportant', 'postpone']);
-  assert.deepEqual(rowActions(todo), ['focus', 'notes', 'makeImportant']);
+  assert.deepEqual(rowActions(task), ['edit', 'focus', 'notes', 'unimportant', 'postpone']);
+  for (const row of [learning, project]) assert.deepEqual(rowActions(row), ['edit', 'focus', 'notes', 'makeImportant', 'postpone']);
+  assert.deepEqual(rowActions(todo), ['edit', 'focus', 'notes', 'makeImportant']);
   assert.deepEqual(rowActions({ ...task, item: { ...task.item, done: true } }), []);
 });
 
@@ -54,4 +54,13 @@ test('timer lengths default to twenty minutes and reload separately per item', (
   assert.deepEqual(reloaded.get(taskKey), { minutes: 5 });
   assert.deepEqual(reloaded.get(todoKey), { minutes: 13 });
   assert.deepEqual(reloaded.get('different item'), { minutes: 20 });
+});
+
+import { setText } from '../js/today-data.js';
+test('✎ edit changes the visible text and planned minutes only', () => {
+  const plan = { items: [{ id: 'a', title: 'Old', minutes: 45 }] };
+  assert.deepEqual(setText(plan, 'items', 'a', { text: ' New ', minutes: '30' }).items[0], { id: 'a', title: 'New', minutes: 30 });
+  assert.equal(setText(plan, 'items', 'a', { text: '   ' }), plan);
+  const todos = { todos: [{ id: 't', text: 'Old' }] };
+  assert.deepEqual(setText(todos, 'todos', 't', { text: 'New', minutes: '30' }).todos[0], { id: 't', text: 'New' });
 });

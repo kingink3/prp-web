@@ -6,7 +6,7 @@ import {
   addReminder, addTodo, carryDue, clearDone, completeReminder, emptyLists, planGroups, planPath,
   editDailyIdea, focusOrder, nextFocusRow, planProgress, reminderPath, reorder, rowActions, rowRank,
   setDone, setImportant,
-  setNotes, snooze, splitReminders, todoPath, unpostpone, postpone,
+  setNotes, setText, snooze, splitReminders, todoPath, unpostpone, postpone,
 } from './today-data.js';
 
 const s = strings.todayView;
@@ -319,6 +319,22 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     return ok;
   }
 
+  function editText(row) {
+    const isPlan = row.path === planPath;
+    const text = el('textarea');
+    text.value = (isPlan ? row.item.title : row.item.text) ?? '';
+    const fields = [formControl(s.editText, text)];
+    let minutes;
+    if (isPlan) {
+      minutes = input('number', s.editMinutes);
+      minutes.min = '1'; minutes.max = '600';
+      minutes.value = row.item.minutes ?? '';
+      fields.push(formControl(s.editMinutes, minutes));
+    }
+    openDialog(s.editTitle, fields, () =>
+      editRow(row, (list, key, id) => setText(list, key, id, { text: text.value, minutes: minutes?.value }), 'edit item'));
+  }
+
   function editNotes(row) {
     const fields = {};
     const controls = ['comment', 'blocker'].map(key => {
@@ -614,6 +630,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     const callbacks = {
       focus: () => openFocus(row, trigger),
       notes: () => editNotes(row),
+      edit: () => editText(row),
       makeImportant: toggleImportant,
       unimportant: toggleImportant,
       postpone: () => postponeRow(row),
@@ -726,10 +743,10 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     const daily = data[planPath];
     date.textContent = dayLabel(daily.date) + (fixture ? ' · ' + s.fixture : '');
     const grouped = planGroups(daily, data[todoPath], statuses);
-    const totals = planProgress(grouped);
-    count.textContent = s.counter(totals.done, totals.total, totals.elapsed, totals.planned);
-    progress.max = totals.planned || totals.total || 1;
-    progress.value = totals.planned ? totals.elapsed : totals.done;
+    const totals = planProgress(grouped, daily.date);
+    count.textContent = s.counter(totals.done, totals.total, totals.timed);
+    progress.max = totals.total || 1;
+    progress.value = totals.done;
     for (const [name, rows] of Object.entries(grouped)) {
       groups[name].rows.replaceChildren(...rows.map(row => renderRow(row, rows)));
       groups[name].empty.hidden = Boolean(rows.length);

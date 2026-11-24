@@ -78,7 +78,7 @@ test('groups by kind and reference, hides paused and parked cards, and counts pl
   assert.deepEqual(groups.tasks.map(row => row.item.id), ['t4', todo.todos[0].id, 't3', todo.todos[1].id]);
   assert.deepEqual(groups.learning.map(row => row.item.id), ['t1']);
   assert.deepEqual(groups.projects, []);
-  assert.deepEqual(planProgress(groups), { done: 1, total: 3, elapsed: 0, planned: 30 });
+  assert.deepEqual(planProgress(groups, plan.date), { done: 2, total: 5, timed: 0 });
 });
 
 test('adds reminders and separates overdue, today and later entries', () => {
