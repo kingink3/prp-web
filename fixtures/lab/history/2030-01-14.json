@@ -9,5 +9,10 @@
       "done_at": "2030-01-14T18:00"
     }
   ],
-  "todos": []
+  "postponed": [
+    { "id": "pp-1", "title": "Review the draft", "until": "2030-01-16", "postponed_on": "2030-01-14" }
+  ],
+  "todos": [
+    { "id": "td-1", "text": "Return a library book", "done": true, "done_at": "2030-01-14T14:00" }
+  ]
 }
