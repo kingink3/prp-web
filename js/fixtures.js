@@ -3,10 +3,12 @@ export const fixtureMode = ['localhost', '127.0.0.1', '[::1]'].includes(location
 
 export function createFixtureClient() {
   const edits = new Map();
+  const fixtureModule = path => import(new URL('../fixtures/lab/' + path + '.js', import.meta.url));
   async function getFile(path) {
     if (edits.has(path)) return { text: edits.get(path) };
     try {
-      const { default: text } = await import(new URL('../fixtures/lab/' + path + '.js', import.meta.url));
+      const { default: text } = await fixtureModule(path);
+      if (typeof text !== 'string') throw new Error('Fixture does not exist');
       return { text };
     } catch {
       throw Object.assign(new Error('Fixture unavailable'), { status: 404 });
@@ -14,6 +16,15 @@ export function createFixtureClient() {
   }
   return {
     getFile,
+    async listDir(path) {
+      const { default: names } = await fixtureModule(path + '/.index');
+      const all = new Set(names);
+      for (const file of edits.keys()) {
+        const [directory, name, nested] = file.split('/');
+        if (directory === path && name && !nested) all.add(name);
+      }
+      return [...all].map(name => ({ type: 'file', name }));
+    },
     async update(path, mutate, message, { initial } = {}) {
       const current = await getFile(path).catch(error => {
         if (initial === undefined || error.status !== 404) throw error;

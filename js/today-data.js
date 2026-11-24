@@ -56,6 +56,27 @@ export function setNotes(data, key, id, notes) {
 
 export const removeItem = (data, key, id) => change(data, key, id, () => null);
 
+export function addObjectToPlan(data, card, at) {
+  const items = data.items ?? [];
+  const id = uniqueId([...items, ...(data.postponed ?? [])], 'p-' + Math.floor(at.getTime() / 1000));
+  const task = card.nextStep ?? '';
+  return { ...data, items: [...items, {
+    id, title: task || card.title, kind: card.type, ref: card.id, minutes: 30, task,
+    done: false, done_at: null,
+  }] };
+}
+
+export function editDailyIdea(data, idea, patch) {
+  const ideas = data.ideas ?? [];
+  const index = ideas.findIndex(entry => (entry.id ?? entry.ref) === (idea.id ?? idea.ref));
+  if (index < 0) throw new RangeError('The idea is no longer in the plan');
+  const current = ideas[index];
+  const next = { ...current, ...patch };
+  if (Object.hasOwn(patch, 'comment') && !patch.comment) delete next.comment;
+  if (current.reaction === next.reaction && current.comment === next.comment) return data;
+  return { ...data, ideas: ideas.toSpliced(index, 1, next) };
+}
+
 export function postpone(data, id, at) {
   const item = data.items.find(entry => entry.id === id);
   if (!item) return data;

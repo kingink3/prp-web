@@ -2,6 +2,8 @@ import { createGitHubClient, GitHubError, isRepository } from './github.js';
 import { strings } from './strings.js';
 import { createFixtureClient, fixtureMode } from './fixtures.js';
 import { createTodayView } from './today-view.js';
+import { createObjectView } from './object-view.js';
+import { createCalendarView } from './calendar-view.js';
 
 const SETTINGS_KEY = 'prp.settings';
 const TOKEN_KEY = 'prp.githubToken';
@@ -43,6 +45,10 @@ let connection;
 const fixtureClient = fixtureMode ? createFixtureClient() : null;
 const todayPanel = byId('today-panel');
 const todayView = createTodayView(todayPanel, { fixture: fixtureMode, onResponse: updateExpiration });
+const objectPanel = byId('objects-panel');
+const objectView = createObjectView(objectPanel, { fixture: fixtureMode, onResponse: updateExpiration });
+const calendarPanel = byId('calendar-panel');
+const calendarView = createCalendarView(calendarPanel, { fixture: fixtureMode, onResponse: updateExpiration });
 
 for (const element of document.querySelectorAll('[data-string]')) {
   element.textContent = strings[element.dataset.string];
@@ -52,7 +58,7 @@ for (const element of document.querySelectorAll('[data-label]')) {
 }
 
 function showRoute() {
-  const requested = location.hash.slice(1);
+  const [requested, detail] = location.hash.slice(1).split('/');
   const connected = isRepository(settings.repository ?? '') && savedToken;
   const initial = fixtureMode || connected ? 'today' : 'settings';
   const route = routes.has(requested) ? requested : initial;
@@ -61,17 +67,24 @@ function showRoute() {
     if (tab.dataset.tab === selected) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
   }
+  const branch = settings.branch || 'main';
+  const client = fixtureClient || (connected ? connectionFor(settings.repository, branch, savedToken) : null);
   todayPanel.hidden = route !== 'today';
   if (route === 'today') {
-    const branch = settings.branch || 'main';
-    todayView.show(fixtureClient || (connected && connectionFor(settings.repository, branch, savedToken)),
-      fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]));
+    todayView.show(client, fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]));
   } else todayView.hide();
-  const overview = route !== 'today' && route !== 'more' && route !== 'settings';
-  byId('overview').hidden = !overview;
+  objectPanel.hidden = route !== 'directions' && route !== 'ideas';
+  if (objectPanel.hidden) objectView.hide();
+  else {
+    let path = detail;
+    try { if (detail) path = decodeURIComponent(detail); } catch { /* Show an unavailable card. */ }
+    objectView.show(client, route, path);
+  }
+  calendarPanel.hidden = route !== 'calendar';
+  if (calendarPanel.hidden) calendarView.hide();
+  else calendarView.show(client);
   byId('more-panel').hidden = route !== 'more';
   byId('settings-panel').hidden = route !== 'settings';
-  if (overview) byId('overview-title').textContent = strings[route];
   document.title = `${strings[route]} · ${strings.appName}`;
 }
 

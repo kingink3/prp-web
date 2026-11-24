@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 20
       - run: node --test
-      - name: Check Settings and Today in Chrome
+      - name: Check the web app in Chrome
         timeout-minutes: 2
         env:
           PRP_SCREENSHOTS: ${{ runner.temp }}/prp-screenshots
@@ -29,5 +29,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: today-screenshots
-          path: ${{ runner.temp }}/prp-screenshots/*.png
+          path: ${{ runner.temp }}/prp-screenshots/today-*.png
+          if-no-files-found: ignore
+
+      - name: Save Directions, Ideas and Calendar screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: directions-ideas-calendar-screenshots
+          path: ${{ runner.temp }}/prp-screenshots/work-*.png
           if-no-files-found: ignore

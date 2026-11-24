@@ -181,6 +181,24 @@ export function getSection(markdown, title) {
   return lineText(lines.slice(start, end).join(''));
 }
 
+export function bodySections(body) {
+  const lines = linesOf(body);
+  const sections = [];
+  let title = '';
+  let start = 0;
+  for (const { index, text } of visibleMarkdownLines(lines, 0, lines.length)) {
+    const match = /^ {0,3}#{1,6}[ \t]+(.+?)\s*$/.exec(text);
+    if (!match) continue;
+    const content = lines.slice(start, index).join('').trim();
+    if (title || content) sections.push({ title, text: content });
+    title = match[1].replace(/[ \t]+#+$/, '');
+    start = index + 1;
+  }
+  const content = lines.slice(start).join('').trim();
+  if (title || content) sections.push({ title, text: content });
+  return sections;
+}
+
 function insertLines(lines, start, end, content, eol, finalEnding = eol) {
   const prefix = lines.slice(0, start).join('');
   const suffix = lines.slice(end).join('');
@@ -223,6 +241,14 @@ function readTasks(lines) {
 
 export function parseChecklist(markdown) {
   return readTasks(linesOf(markdown)).tasks.map(({ text, done }) => ({ text, done }));
+}
+
+export function checklistNotes(markdown) {
+  const lines = linesOf(markdown);
+  const { section, tasks } = readTasks(lines);
+  if (section.heading < 0) return '';
+  for (const task of tasks) lines[task.index] = '';
+  return lines.slice(section.heading + 1, section.end).join('').trim();
 }
 
 export function setChecklist(markdown, checklist) {

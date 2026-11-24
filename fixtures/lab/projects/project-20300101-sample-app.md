@@ -10,11 +10,12 @@ created: 2030-01-01
 last_touched: 2030-01-14
 source: fixture
 tags: []
-links: []
+links: ["https://example.com/sample"]
 next_step: "Draft landing copy"
 ---
 ## Цель
 A sample project.
+See the [sample reference](https://example.com/reference).
 
 ## Задачи
 - [x] Pick a name

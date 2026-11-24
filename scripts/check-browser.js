@@ -135,6 +135,16 @@ try {
   const ready = "document.querySelector('[data-id=t4]') && !document.querySelector('.today-timer .today-time').disabled";
   const screenshots = process.env.PRP_SCREENSHOTS;
   if (screenshots) await mkdir(screenshots, { recursive: true });
+  async function capture(name, width, height) {
+    if (!screenshots) return;
+    const { cssContentSize } = await send('Page.getLayoutMetrics');
+    const { data } = await send('Page.captureScreenshot', {
+      format: 'png', fromSurface: true, captureBeyondViewport: true,
+      clip: { x: 0, y: 0, width, height: Math.max(height, cssContentSize.height), scale: 1 },
+    });
+    await writeFile(join(screenshots, name + '.png'), Buffer.from(data, 'base64'));
+  }
+
   for (const [width, height] of [[390, 844], [1024, 900]]) {
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 });
     await send('Page.navigate', { url: url + '?fixtures=1#today' });
@@ -147,14 +157,19 @@ try {
     assert.equal(await evaluate("document.body.textContent.includes('позже: 1')"), true);
     assert.equal(await evaluate("document.querySelector('[data-id=t4] .today-star').textContent"), '★');
     assert.equal(await evaluate('window.lastGitHubRequest'), undefined);
-    if (screenshots) {
-      const { cssContentSize } = await send('Page.getLayoutMetrics');
-      const { data } = await send('Page.captureScreenshot', {
-        format: 'png', fromSurface: true, captureBeyondViewport: true,
-        clip: { x: 0, y: 0, width, height: Math.max(height, cssContentSize.height), scale: 1 },
-      });
-      await writeFile(join(screenshots, 'today-' + width + '.png'), Buffer.from(data, 'base64'));
+    if (width === 390) {
+      const duration = await evaluate(`(() => {
+        const duration = document.querySelector('[data-id=t4] .today-time');
+        const range = document.createRange();
+        range.selectNodeContents(duration);
+        return { text: duration.textContent, lines: range.getClientRects().length,
+          width: range.getBoundingClientRect().width, controlWidth: duration.clientWidth };
+      })()`);
+      assert.equal(duration.text, '20 мин');
+      assert.equal(duration.lines, 1);
+      assert.ok(duration.width <= duration.controlWidth);
     }
+    await capture('today-' + width, width, height);
   }
 
   const click = async selector => {
@@ -247,6 +262,81 @@ try {
   await waitFor(() => evaluate(ready));
   assert.equal(await visible('[data-id=t1].is-done'), false);
 
+  // Run the new sections through the loopback fixture client, including returning to Today.
+  const workIdle = () => waitFor(() => evaluate("document.querySelector('#objects-panel .work-content')?.getAttribute('aria-busy') === 'false'"));
+  async function workCapture(name) {
+    assert.equal(await evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth'), true);
+    await evaluate('document.activeElement.blur(); window.scrollTo(0, 0)');
+    await capture('work-' + name, 390, 844);
+  }
+  await click('[data-tab=directions]');
+  await waitFor(() => visible('.work-tabs button'));
+  assert.equal(await evaluate("document.querySelectorAll('.work-tabs button').length"), 5);
+  await evaluate("[...document.querySelectorAll('.work-tabs button')].find(button => button.textContent === 'Проекты').click()");
+  assert.match(await evaluate("document.querySelector('.work-object').textContent"), /Sample app.*Draft landing copy.*1\/3.*1 дн\. назад/);
+  await workCapture('directions');
+  await click('.work-object');
+  await waitFor(() => visible('.work-tasks'));
+  assert.equal(await evaluate("document.querySelectorAll('.work-task').length"), 3);
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.work-text a'), a => [a.protocol, a.rel])`),
+    [['https:', 'noopener noreferrer'], ['https:', 'noopener noreferrer']]);
+  await click('.work-fields summary');
+  await workCapture('project');
+  await evaluate("document.querySelector('.work-form input').value = '<b>Browser project task</b>'");
+  await click('.work-form button');
+  await workIdle();
+  assert.equal(await visible('.work-task b'), false);
+  assert.equal(await evaluate("document.querySelector('.work-task:last-child label').textContent"), '<b>Browser project task</b>');
+  await click('.work-task:last-child button:first-of-type');
+  await workIdle();
+  assert.equal(await evaluate("document.querySelector('.work-task:nth-child(3) label').textContent"), '<b>Browser project task</b>');
+  await click('.work-task:nth-child(2) input');
+  await workIdle();
+  assert.equal(await evaluate("document.querySelector('.work-content section .work-text').textContent"), '<b>Browser project task</b>');
+  await click('.work-task:nth-child(3) button:last-of-type');
+  await workIdle();
+  assert.equal(await evaluate("document.querySelector('.work-content section .work-text').textContent"), 'Show to 3 people');
+  for (const value of ['paused', 'active']) {
+    await evaluate(`(() => {
+      const select = document.querySelector('.work-content select');
+      select.value = '${value}';
+      select.dispatchEvent(new Event('change'));
+    })()`);
+    await workIdle();
+    assert.equal(await evaluate("document.querySelector('.work-content select').value"), value);
+  }
+  await click('.work-content button.primary');
+  await workIdle();
+  await click('[data-tab=today]');
+  await waitFor(() => visible('[data-id^=p-]'));
+  assert.match(await evaluate("document.querySelector('[data-id^=p-]').textContent"), /Show to 3 people/);
+
+  await click('[data-tab=ideas]');
+  await waitFor(() => visible('.work-comment'));
+  assert.equal(await evaluate("document.querySelectorAll('.work-object').length"), 2);
+  await workCapture('ideas');
+  await click('.work-reactions button:nth-child(2)');
+  await workIdle();
+  assert.equal(await evaluate("document.querySelector('.work-reactions [aria-pressed=true]').textContent"), '🧪');
+  await evaluate("document.querySelector('.work-comment textarea').value = 'Owner fixture note'");
+  await click('.work-comment button');
+  await workIdle();
+  await click('[data-tab=calendar]');
+  await waitFor(() => visible('.calendar-detail'));
+  assert.match(await evaluate("document.querySelector('.calendar-detail').textContent"), /Buy batteries.*Sort photos.*Water plants/);
+  assert.equal(await evaluate("performance.getEntriesByType('resource').some(entry => entry.name.includes('/history/2030-01-14.json.js'))"), false);
+  await click('.calendar-day.has-data:not([aria-current])');
+  await waitFor(() => evaluate("document.querySelector('.calendar-detail').textContent.includes('Old task')"));
+  assert.match(await evaluate("document.querySelector('.calendar-detail').textContent"), /Old task.*Review the draft.*Return a library book/);
+  await workCapture('calendar');
+  await evaluate("const search = document.querySelector('.calendar-search input'); search.value = 'review'; search.dispatchEvent(new Event('input'))");
+  await waitFor(() => evaluate("document.querySelector('.calendar-search').textContent.includes('Review December')"));
+  assert.match(await evaluate("document.querySelector('.calendar-search').textContent"), /Review the draft.*Review December/);
+  await click('[data-tab=ideas]');
+  await waitFor(() => visible('.work-comment'));
+  assert.equal(await evaluate("document.querySelector('.work-comment textarea').value"), 'Owner fixture note');
+  assert.equal(await evaluate('window.lastGitHubRequest'), undefined);
+
   // Mock real API writes to verify optimistic rendering and rollback without a token or network.
   const files = {};
   for (const file of ['today.json', 'todo.json', 'reminders.json',
@@ -295,7 +385,7 @@ try {
   await waitFor(() => evaluate('window.getCount > window.beforeRefresh'));
   await idle();
   assert.deepEqual(errors, []);
-  console.log('Browser Today and Settings checks passed');
+  console.log('Browser Settings, Today, Directions, Ideas and Calendar checks passed');
 } finally {
   socket?.close();
   if (chrome.pid && chrome.exitCode === null) {
