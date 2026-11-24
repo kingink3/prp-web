@@ -1,0 +1,36 @@
+name: codex-review
+# Asks the owner's review routine to review a Codex PR.
+# Safety (public repo): pull_request_target runs this file from main, the PR's code is never checked out
+# or executed; it fires only for branches codex/* opened by the repository owner inside this repository,
+# so a stranger's PR (fork or not) cannot trigger a review or a merge.
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+permissions: {}
+jobs:
+  review:
+    if: >-
+      startsWith(github.head_ref, 'codex/') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == github.repository_owner &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fire «codex-review»
+        env:
+          FIRE_URL: ${{ secrets.LAB_FIRE_URL }}
+          FIRE_TOKEN: ${{ secrets.LAB_FIRE_TOKEN }}
+          PAYLOAD_TEXT: "codex-review: ${{ github.repository }}#${{ github.event.pull_request.number }}"
+        run: |
+          clean() { printf '%s' "$1" | tr -d '[:space:]<>"'"'"; }
+          FIRE_URL=$(clean "$FIRE_URL"); FIRE_TOKEN=$(clean "$FIRE_TOKEN")
+          if [ -z "$FIRE_URL" ] || [ -z "$FIRE_TOKEN" ]; then
+            echo "::warning::secrets LAB_FIRE_URL / LAB_FIRE_TOKEN are not set — review not requested"; exit 0
+          fi
+          case "$FIRE_URL" in https://api.anthropic.com/*) ;; *) echo "::error::LAB_FIRE_URL must be https://api.anthropic.com/…"; exit 1;; esac
+          body=$(python3 -c 'import json,os; print(json.dumps({"text": os.environ["PAYLOAD_TEXT"]}))')
+          code=$(curl -sS -o /tmp/r.txt -w '%{http_code}' -X POST "$FIRE_URL" \
+            -H "Authorization: Bearer $FIRE_TOKEN" -H "anthropic-version: 2023-06-01" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" -H "Content-Type: application/json" -d "$body")
+          echo "routine answered HTTP $code"
+          [ "$code" -lt 300 ] || exit 1
