@@ -479,23 +479,9 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   });
 
   function attachImportance(node, toggle) {
-    let press;
-    function cancel() {
-      clearTimeout(press?.timer);
-      press = undefined;
-    }
-    node.addEventListener('pointerdown', event => {
-      if (event.pointerType === 'mouse' || event.target.closest('button, summary, a')) return;
-      cancel();
-      const timer = setTimeout(() => { cancel(); toggle(); }, 520);
-      press = { timer, x: event.clientX, y: event.clientY };
-    });
-    node.addEventListener('pointermove', event => {
-      if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > 9) cancel();
-    });
-    for (const type of ['pointerup', 'pointercancel', 'pointerleave']) node.addEventListener(type, cancel);
+    // Right click (mouse) toggles ⭐. On touch, long press is used to drag; ⭐ is in the «⋯» menu.
     node.addEventListener('contextmenu', event => {
-      if (event.target.closest('button, summary, a')) return;
+      if (event.target.closest('button, summary, a, input, textarea')) return;
       event.preventDefault();
       if (event.pointerType === 'mouse' || !event.pointerType) toggle();
     });
@@ -505,7 +491,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     const handle = button('⠿', () => {}, { label: s.reorder, className: 'today-icon today-drag', disabled: pending });
     let target;
     let pointer;
-    function moveTo(id) {
+    function moveTo(id, fromKeyboard = false) {
       const ids = peers.map(peer => peer.item.id);
       const from = ids.indexOf(row.item.id);
       const to = ids.indexOf(id);
@@ -514,7 +500,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
       ids.splice(to, 0, row.item.id);
       const save = apply(row.path, list => reorder(list, row.key, ids), 'reorder plan rows');
       save.then(() => {
-        if (active && document.activeElement === document.body) {
+        if (fromKeyboard && active && document.activeElement === document.body) {
           const replacement = [...panel.querySelectorAll('.today-row')].find(candidate =>
             candidate.dataset.id === row.item.id && candidate.dataset.path === row.path);
           replacement?.querySelector('.today-drag')?.focus();
@@ -526,17 +512,32 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
       event.preventDefault();
       const from = peers.indexOf(row);
       const next = peers[from + (event.key === 'ArrowUp' ? -1 : 1)];
-      if (next) moveTo(next.item.id);
+      if (next) moveTo(next.item.id, true);
     });
-    handle.addEventListener('pointerdown', event => {
-      if (event.button !== 0 || pointer !== undefined) return;
-      event.preventDefault();
+    // Drag the whole row: mouse — press and move; touch — hold ~0.3 s, then move.
+    // The ⠿ button stays (visually hidden) for keyboard users: focus it and use ↑/↓.
+    let armed = false, start, holdTimer;
+    const interactive = event => event.target.closest('button, summary, a, input, textarea, select, label, .today-check');
+    function begin(event) {
+      armed = true;
       pointer = event.pointerId;
-      handle.setPointerCapture(pointer);
+      try { node.setPointerCapture(pointer); } catch { /* pointer already gone */ }
       node.classList.add('dragging');
+      if (event.pointerType !== 'mouse') navigator.vibrate?.(10);
+    }
+    node.addEventListener('pointerdown', event => {
+      if (pending || event.button !== 0 || pointer !== undefined || interactive(event)) return;
+      start = { x: event.clientX, y: event.clientY, id: event.pointerId, type: event.pointerType };
+      if (event.pointerType !== 'mouse') holdTimer = setTimeout(() => begin(event), 300);
     });
-    handle.addEventListener('pointermove', event => {
-      if (event.pointerId !== pointer) return;
+    node.addEventListener('pointermove', event => {
+      if (!start || event.pointerId !== start.id) return;
+      const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+      if (!armed) {
+        if (start.type === 'mouse' && moved > 6) begin(event);
+        else if (start.type !== 'mouse' && moved > 9) { clearTimeout(holdTimer); start = undefined; }  // a scroll, not a drag
+        if (!armed) return;
+      }
       target?.classList.remove('drop-target');
       const candidate = document.elementFromPoint(event.clientX, event.clientY)?.closest('.today-row');
       target = candidate !== node && candidate?.parentElement === node.parentElement &&
@@ -545,15 +546,19 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
       if (event.clientY > innerHeight - 36) window.scrollBy(0, 20);
       if (event.clientY < 36) window.scrollBy(0, -20);
     });
+    node.addEventListener('touchmove', event => { if (armed) event.preventDefault(); }, { passive: false });
     function finish(event) {
-      if (event.pointerId !== pointer) return;
+      clearTimeout(holdTimer);
+      if (start && event.pointerId === start.id && !armed) start = undefined;
+      if (!armed || event.pointerId !== pointer) return;
       target?.classList.remove('drop-target');
       node.classList.remove('dragging');
       const id = target?.dataset.id;
-      pointer = target = undefined;
+      pointer = target = start = undefined;
+      armed = false;
       if (event.type === 'pointerup' && id) moveTo(id);
     }
-    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) handle.addEventListener(type, finish);
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) node.addEventListener(type, finish);
     return handle;
   }
 
