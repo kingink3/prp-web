@@ -123,7 +123,7 @@ export const strings = {
     noIdeas: 'Карточек с идеями пока нет.',
     ownerComment: 'Комментарий владельца',
     saveComment: 'Сохранить комментарий',
-    reactions: { like: ['👍', 'Нравится'], test: ['🧪', 'Проверить'], dismiss: ['✕', 'Отклонить'] },
+    reactions: { like: ['👍', 'Нравится'], test: ['🧪', 'Проверить'], kill: ['✕', 'Отклонить'] },
     previousMonth: 'Предыдущий месяц',
     nextMonth: 'Следующий месяц',
     currentDay: 'Сегодня',
