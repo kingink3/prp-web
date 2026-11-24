@@ -63,7 +63,6 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   const summary = el('div', undefined, 'today-summary');
   summary.append(count, progress);
   const plan = el('div', undefined, 'today-column');
-  plan.append(summary);
   const groups = {};
   for (const name of ['tasks', 'learning', 'projects']) {
     const section = el('section', undefined, 'today-card');
@@ -118,7 +117,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   reminderForm.append(reminderText, formControl(s.when, reminderAt),
     formControl(s.repeat, reminderRepeat), addReminderButton);
   reminders.append(el('h2', s.reminders), reminderRows, laterLabel, reminderForm);
-  aside.append(reminders);
+  aside.append(reminders, summary); // «Сделано» sits under the reminders, as in the Console
   body.append(plan, aside);
 
   const dialog = el('dialog', undefined, 'today-dialog');
@@ -662,7 +661,8 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
       return row;
     }));
     if (!due.length) reminderRows.append(el('li', s.emptyReminders, 'today-muted'));
-    laterLabel.textContent = later.length ? s.later(later.length, atLabel(later[0].at)) : s.laterNone;
+    laterLabel.textContent = later.length ? s.later(later.length, atLabel(later[0].at)) : '';
+    laterLabel.hidden = !later.length;
   }
 
   function renderDailyIdeas() {
