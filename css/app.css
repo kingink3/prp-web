@@ -252,6 +252,7 @@ textarea { resize: vertical; }
 .instant-heading { position: relative; display: flex; align-items: center; gap: 8px; }
 .instant-help summary { display: grid; place-items: center; min-width: 26px; list-style: none; }
 .instant-help summary::-webkit-details-marker { display: none; }
+.instant-help:not([open]) > p, .today-menu:not([open]) > .rowmenu { display: none; }
 .instant-help p {
   position: absolute;
   z-index: 2;

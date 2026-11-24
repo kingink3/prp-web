@@ -71,7 +71,6 @@ export function createFocusView(onAction) {
       kind.textContent = item ? kindLabel : '';
       title.textContent = item ? (item.title ?? item.text) : s.focusEnd;
       contents.hidden = !item;
-      card.toggleAttribute('data-empty', !item);
       error.hidden = true;
       if (item) {
         task.textContent = item.task ?? '';

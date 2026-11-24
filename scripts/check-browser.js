@@ -326,8 +326,10 @@ try {
   assert.equal(await focusTitle(), 'Draft landing copy');
   await click('.focus-actions button:last-child');
   assert.equal(await focusTitle(), 'Return library book');
+  await evaluate("document.querySelector('.focus-notes textarea').value = 'Saved on Back'");
   await evaluate('history.back()');
   await waitForFocusClose();
+  assert.equal(await evaluate("document.querySelector('[data-id=" + todoId + "]').textContent.includes('Saved on Back')"), true);
   assert.equal(await evaluate("document.querySelector('[data-id=t4]').textContent.includes('<b>Saved with completion</b>')"), true);
   assert.equal(await visible('[data-id=t4] b'), false);
 
