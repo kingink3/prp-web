@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createFixtureServer } from './serve.js';
+import { comparisonHtml, consoleMarkup } from './design-reference.js';
 
 const root = new URL('../', import.meta.url);
 const profile = await mkdtemp(join(tmpdir(), 'prp-browser-'));
@@ -264,7 +265,8 @@ try {
   const startPoint = await evaluate("(() => { const button = document.querySelector('[data-id=t1] .today-timer .today-icon'); button.scrollIntoView({ block: 'center' }); const r = button.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()");
   await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [startPoint] });
   await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await waitFor(() => evaluate("document.querySelector('[data-id=t1] .today-timer .today-icon').textContent === '■'"));
+  await waitFor(() => visible('[data-id=t1] .timer.run'));
+  assert.equal(await evaluate("document.querySelector('[data-id=t1] .today-timer .today-icon').textContent"), '■');
   await evaluate("const realNow = Date.now; Date.now = () => realNow() + 61_000");
   await waitFor(() => evaluate("document.querySelector('dialog[open] h2')?.textContent === 'Отметить выполненным?'"));
   assert.equal(await evaluate('window.chimes'), 1);
@@ -536,6 +538,10 @@ try {
   assert.equal(await evaluate("localStorage.getItem('prp.githubToken')"), 'fixture-github-token');
   assert.deepEqual(errors, []);
   if (screenshots) {
+    const reference = await readFile(new URL('docs/console-reference.css', root), 'utf8');
+    const images = [];
+    await send('DOM.enable');
+    await send('CSS.enable');
     const routes = [
       ['today', '[data-id=t4]'],
       ['directions', '.work-object'],
@@ -555,13 +561,26 @@ try {
             location.hash = '#${route}';
           })()`);
           await waitFor(() => visible(selector));
-          assert.equal(await evaluate('document.documentElement.scrollWidth'), width);
+          assert.equal(await evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth'), true);
           assert.equal(await evaluate(tabInView), true);
-          await capture('design-' + route + '-' + width + '-' + theme, width, height);
+          const name = 'design-' + route + '-' + width + '-' + theme;
+          await capture(name, width, height);
+          const html = await evaluate('(' + consoleMarkup.toString() + ')(' + JSON.stringify(route) + ',' + JSON.stringify(theme) + ')');
+          await send('Page.navigate', { url: 'about:blank' });
+          await waitFor(() => evaluate("location.href === 'about:blank'"));
+          const { frameTree } = await send('Page.getFrameTree');
+          const frameId = frameTree.frame.id;
+          await send('Page.setDocumentContent', { frameId, html });
+          const { styleSheetId } = await send('CSS.createStyleSheet', { frameId });
+          await send('CSS.setStyleSheetText', { styleSheetId, text: reference });
+          await capture(name + '-reference', width, height);
+          images.push({ route, width, theme, name });
         }
       }
     }
+    await writeFile(join(screenshots, 'design-comparison.html'), comparisonHtml(images));
   }
+  assert.deepEqual(errors, []);
   console.log('Browser Settings, Today, Directions, Ideas, Calendar and More checks passed');
 } finally {
   socket?.close();

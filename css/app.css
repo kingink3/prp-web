@@ -203,7 +203,7 @@ h2, .codex-group h3, .work-group > h3 {
   font-weight: 500;
   cursor: pointer;
 }
-.btn:hover, button:hover:enabled { border-color: var(--muted); text-decoration: none; }
+.btn:hover, button:hover:where(:enabled) { border-color: var(--muted); text-decoration: none; }
 .btn.primary, button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
 .btn.small { padding: 3px 9px; font-size: 12px; }
 button:disabled { opacity: .5; cursor: default; }
@@ -370,7 +370,7 @@ button.chk[aria-pressed="true"]::before { background: var(--ok); border-color: v
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
-.timer.run { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--b-paused-fg); }
+.timer.run { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
 .timer button { padding: 0 6px; box-shadow: none; color: inherit; }
 .timer .today-time { min-width: 54px; padding-inline: 2px; white-space: nowrap; }
 .timer.run .today-time:disabled { opacity: 1; }

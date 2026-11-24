@@ -45,5 +45,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: console-design-screenshots
-          path: ${{ runner.temp }}/prp-screenshots/design-*.png
+          path: |
+            ${{ runner.temp }}/prp-screenshots/design-*.png
+            ${{ runner.temp }}/prp-screenshots/design-comparison.html
           if-no-files-found: ignore
