@@ -1,3 +1,4 @@
+import './frame-guard.js'; // must stay the first import
 import { createGitHubClient, GitHubError, isRepository } from './github.js';
 import { strings } from './strings.js';
 import { createFixtureClient, fixtureMode } from './fixtures.js';
