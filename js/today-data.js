@@ -5,6 +5,13 @@ export const todoPath = 'todo.json';
 export const reminderPath = 'reminders.json';
 export const emptyLists = { [todoPath]: { todos: [] }, [reminderPath]: { reminders: [] } };
 
+export function editPlanText(text, expectedDay, mutate) {
+  const current = JSON.parse(text);
+  if (current.date !== expectedDay) throw new RangeError('The plan changed day');
+  const next = mutate(carryDue(current));
+  return next === current ? text : JSON.stringify(next, null, 2) + '\n';
+}
+
 function change(data, key, id, edit) {
   const list = data[key] ?? [];
   const index = list.findIndex(item => item.id === id);
@@ -14,7 +21,7 @@ function change(data, key, id, edit) {
   return { ...data, [key]: list.toSpliced(index, 1, ...(next ? [next] : [])) };
 }
 
-function uniqueId(list, id) {
+export function uniqueId(list, id) {
   const dash = id.lastIndexOf('-');
   let stamp = Number(id.slice(dash + 1));
   while (list.some(item => item.id === id)) id = id.slice(0, dash + 1) + ++stamp;
@@ -74,7 +81,7 @@ export function addObjectToPlan(data, card, at) {
   const id = uniqueId([...items, ...(data.postponed ?? [])], 'p-' + Math.floor(at.getTime() / 1000));
   const task = card.nextStep ?? '';
   return { ...data, items: [...items, {
-    id, title: task || card.title, kind: card.type, ref: card.id, minutes: 30, task,
+    id, title: task || card.title, kind: card.type, ref: card.id, minutes: card.minutes ?? 30, task,
     done: false, done_at: null,
   }] };
 }
@@ -101,10 +108,9 @@ export function editDailyIdea(data, idea, patch) {
   return { ...data, ideas: ideas.toSpliced(index, 1, next) };
 }
 
-export function postpone(data, id, at) {
+export function postpone(data, id, at, date = eveningDate(at)) {
   const item = data.items.find(entry => entry.id === id);
   if (!item) return data;
-  const date = eveningDate(at);
   const until = tomorrow(new Date(date + 'T12:00'));
   const postponed = data.postponed ?? [];
   const nextId = uniqueId([...data.items, ...postponed], postponedId(at));

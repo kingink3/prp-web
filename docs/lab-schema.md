@@ -77,6 +77,7 @@ No frontmatter required. Append-only bullets: `- HH:MM [skill|owner] <what chang
 ## today.json (repo root)
 Today's plan, written by `morning-brief`, edited by the desktop widget
 (`tools/widget/`). Overwritten daily; each day's plan is copied to `history/<date>.json` by `labctl apply`.
+Optional `brief_url` links to the briefing from the web client's morning summary.
 ```json
 {
   "date": "2026-11-24",
@@ -96,6 +97,8 @@ Today's plan, written by `morning-brief`, edited by the desktop widget
 ```
 `evening` — the evening check-in from Console «🌙 Итоги»: `{"done_at": "…", "notes": [{"ref", "text"}]}`
 (each note is also written to the object's `## Где остановился`); copied to `history/<date>.json`.
+The web client saves an evening note through three Contents API writes: the object, the daily journal,
+and `today.json`.
 `postponed` — items the owner moved to a later day («→ завтра»). A new day keeps the list and moves
 items with `until` ≤ date into `items` with `carried: true` (`labctl.new_day`, clients, brief, `apply`).
 

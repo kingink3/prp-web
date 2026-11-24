@@ -18,6 +18,11 @@ export function createMoreView(panel, { fixture, getRoutine, onResponse }) {
   let view;
   let firing = false;
 
+  function routineReady() {
+    const config = getRoutine();
+    return !fixture && isRoutineUrl(config.url) && Boolean(config.token);
+  }
+
   async function dispatch(text, feedback) {
     if (firing) return showNotice(feedback, s.requestInFlight);
     if (!routinePayload(text)) return showNotice(feedback, s.invalidPayload, 'error');
@@ -28,8 +33,11 @@ export function createMoreView(panel, { fixture, getRoutine, onResponse }) {
     showNotice(feedback, s.sending);
     try {
       const status = await fireRoutine(config, text);
-      if (status === null) showNotice(feedback, s.sentRequest, 'success');
-      else showNotice(feedback, s.httpHints[status] || s.httpError(status), 'error');
+      if (status === null) {
+        showNotice(feedback, s.sentRequest, 'success');
+        return true;
+      }
+      showNotice(feedback, s.httpHints[status] || s.httpError(status), 'error');
     } catch {
       showNotice(feedback, s.network, 'error');
     } finally {
@@ -177,6 +185,8 @@ export function createMoreView(panel, { fixture, getRoutine, onResponse }) {
   }
 
   return {
+    dispatch,
+    routineReady,
     show(client, repository) {
       if (view?.client === client) return;
       view = { client, repository };

@@ -8,7 +8,7 @@ import { strings } from './strings.js';
 import { localIsoMinutes, today } from './util.js';
 import {
   addReminder, addTodo, carryDue, clearDone, completeReminder, emptyLists, planGroups, planPath,
-  editDailyIdea, focusOrder, nextFocusRow, planProgress, reminderPath, reorder, rowActions, rowRank,
+  editDailyIdea, editPlanText, focusOrder, nextFocusRow, planProgress, reminderPath, reorder, rowActions, rowRank,
   setDone, setImportant,
   setNotes, setText, snooze, splitReminders, todoPath, unpostpone, postpone,
 } from './today-data.js';
@@ -174,6 +174,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   let toastTimeout;
   let timerRows = [];
   let focusSession;
+  let focusOnLoad = false;
   let focusTimer;
   const timers = createTimers({ persistent: !fixture, onTick: updateTimers });
   const now = () => fixture && data ? new Date(data[planPath].date + 'T10:30') : new Date();
@@ -290,6 +291,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     status.textContent = '';
     reminderAt.value ||= localIsoMinutes(now());
     render();
+    maybeOpenFirst();
     onFirstRender();
   }
 
@@ -341,10 +343,9 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     render();
     try {
       const result = await client.update(path, inputText => {
+        if (path === planPath) return editPlanText(inputText, expectedDay, mutate);
         const current = JSON.parse(inputText);
-        if (path === planPath && current.date !== expectedDay) throw new Error('The plan changed day');
-        const base = path === planPath ? carryDue(current) : current;
-        const changed = mutate(base);
+        const changed = mutate(current);
         return changed === current ? inputText : json(changed);
       }, 'lab: web — ' + what, { initial: Object.hasOwn(emptyLists, path) ? json(emptyLists[path]) : undefined });
       activeLab.remember(path, result);
@@ -513,8 +514,15 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   function openFocus(row, opener) {
     if (pending || focusSession) return;
     if (!history.state?.[focusHistoryKey]) history.pushState({ ...history.state, [focusHistoryKey]: true }, '');
-    focusSession = { row, openedFrom: row, opener: opener.matches('summary') ? '.today-menu summary' : '.today-time' };
+    focusSession = { row, openedFrom: row, opener: opener?.matches('summary') ? '.today-menu summary' : '.today-time' };
     showFocusRow(row);
+  }
+
+  function maybeOpenFirst() {
+    if (!focusOnLoad || !active || !data || pending) return;
+    focusOnLoad = false;
+    const first = focusQueue()[0];
+    if (first) openFocus(first);
   }
 
   function closeFocus({ restore = true, goBack = true } = {}) {
@@ -892,8 +900,9 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   panel.addEventListener('touchcancel', () => { pull = undefined; }, { passive: true });
 
   return {
-    show(client, store, namespace) {
+    show(client, store, namespace, startInFocus = false) {
       active = true;
+      focusOnLoad ||= startInFocus;
       if (source !== client || lab !== store || scope !== namespace) {
         closeFocus({ restore: false, goBack: false });
         source = client;
@@ -916,12 +925,16 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
         const files = todayPaths.map(path => lab.peek(path));
         const entries = lab.peekObjects();
         if (!pending && files.every(Boolean) && entries) displaySnapshot(files, entries);
-        else if (data) onFirstRender();
+        else if (data) {
+          maybeOpenFirst();
+          onFirstRender();
+        }
         refresh();
       }
     },
     hide() {
       active = false;
+      focusOnLoad = false;
       closeFocus({ restore: false, goBack: false });
       if (dialog.open) dialog.close();
     },

@@ -209,17 +209,17 @@ export function appendJournal(markdown, line) {
   return markdown + (markdown && !/[\r\n]$/.test(markdown) ? eol : '') + line + eol;
 }
 
-export async function saveObjectEdit(client, card, mutate, { at, description, commit }) {
+export async function saveObjectEdit(client, card, mutate, { at, day = today(at), description, commit }) {
   let changed;
   const result = await client.update(card.path, text => {
-    const next = mutate(text, today(at));
+    const next = mutate(text, day);
     changed = next !== text;
     return next;
   }, 'lab: web — ' + commit);
   if (!changed) return result;
   const line = journalLine(at, description, card.id);
   let previousCount;
-  const saveJournal = () => client.update('journal/' + today(at) + '.md', markdown => {
+  const saveJournal = () => client.update('journal/' + day + '.md', markdown => {
     const count = markdown.split(/\r\n|\n|\r/).filter(entry => entry === line).length;
     previousCount ??= count;
     return count > previousCount ? markdown : appendJournal(markdown, line);

@@ -117,7 +117,7 @@ export function createCalendarView(panel, { fixture, onResponse }) {
     if (state.loaded.has(date)) return;
     if (state.requests.has(date)) return state.requests.get(date);
     state.failed.delete(date);
-    const request = state.client.getFile('history/' + date + '.json').then(({ text }) => {
+    const request = state.lab.refresh('history/' + date + '.json').then(({ text }) => {
       const day = parseHistoryDay(text, date);
       state.loaded.set(date, day);
       if (state === view) paintActivity(state.grid.querySelector('[data-date="' + date + '"]'), day);
@@ -178,6 +178,7 @@ export function createCalendarView(panel, { fixture, onResponse }) {
       if (state !== view) return;
       const plan = JSON.parse(planFile.text);
       const dates = historyDates(names);
+      state.lab.rememberHistoryDates(dates);
       state.today = fixture && isDay(plan.date) ? plan.date : eveningDate();
       state.month = state.today.slice(0, 7);
       state.selected = state.today;
@@ -214,9 +215,9 @@ export function createCalendarView(panel, { fixture, onResponse }) {
   }
 
   return {
-    show(client) {
+    show(client, lab) {
       if (view?.client === client) return;
-      view = { client, loaded: new Map(), requests: new Map(), failed: new Set() };
+      view = { client, lab, loaded: new Map(), requests: new Map(), failed: new Set() };
       if (client) load(view);
       else body.replaceChildren(link(strings.settings, '#settings'));
     },
