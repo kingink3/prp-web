@@ -295,7 +295,7 @@ try {
   await waitForFocusClose();
   await evaluate("const realNow = Date.now; Date.now = () => realNow() + 61_000");
   await waitFor(() => evaluate("document.querySelector('dialog[open] h2')?.textContent === 'Отметить выполненным?'"));
-  assert.equal(await evaluate('window.chimes'), 1);
+  assert.equal(await evaluate('window.chimes'), 2); // the item chime is two short tones
   await click('dialog .primary');
   await idle();
   assert.equal(await visible('[data-id=t1].is-done'), true);

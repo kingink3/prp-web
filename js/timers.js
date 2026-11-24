@@ -1,3 +1,5 @@
+import { chime, enableAudio, notify } from './sound.js';
+
 const KEY = 'prp.timers';
 
 export function createTimerStore(storage) {
@@ -22,42 +24,16 @@ export function createTimerStore(storage) {
 
 export function createTimers({ persistent, onTick }) {
   let storage;
-  let audio;
   try {
     if (persistent) storage = window.localStorage;
   } catch { /* Storage can be unavailable on this device. */ }
   const { get, entries, write, configure } = createTimerStore(storage);
 
-  function enableAudio() {
-    const Audio = window.AudioContext || window.webkitAudioContext;
-    if (!Audio) return;
-    try {
-      audio ??= new Audio();
-      audio.resume().catch(() => {});
-    } catch { /* Audio can be unavailable on this device. */ }
-  }
-
-  function chime() {
-    if (audio?.state !== 'running') return;
-    const start = audio.currentTime;
-    const volume = audio.createGain();
-    volume.connect(audio.destination);
-    volume.gain.value = 0.12;
-    volume.gain.exponentialRampToValueAtTime(0.001, start + 0.38);
-    const tone = audio.createOscillator();
-    tone.frequency.setValueAtTime(660, start);
-    tone.frequency.setValueAtTime(880, start + 0.15);
-    tone.connect(volume);
-    tone.start(start);
-    tone.stop(start + 0.4);
-    tone.onended = () => { tone.disconnect(); volume.disconnect(); };
-  }
-
   function tick() {
     const now = Date.now();
     const expired = entries().filter(([, timer]) => timer.end <= now && !timer.rang);
     for (const [key, timer] of expired) write(key, { ...timer, rang: true });
-    if (expired.length) chime();
+    if (expired.length) { chime('item'); notify('⏱ Время вышло', ''); }
     onTick(now);
   }
 

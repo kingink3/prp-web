@@ -649,6 +649,8 @@ html:has(.focus-view[open]) { overflow: hidden; }
     align-items: start;
   }
   .calendar-month { grid-row: span 2; }
+  /* the right column starts level with the first task row, not with the «ЗАДАЧИ» label */
+  aside.today-column { margin-top: 26px; }
   .calendar-search { grid-column: 2; }
 }
 
@@ -695,3 +697,10 @@ html:has(.focus-view[open]) { overflow: hidden; }
 .today-row { -webkit-touch-callout: none; }
 .today-row:not(.done) { cursor: grab; }
 .today-row.dragging { cursor: grabbing; }
+
+/* Quick timers (under the reminders) */
+.quick-form { display: grid; grid-template-columns: 1fr 72px auto; gap: 8px; align-items: end; }
+.quick-form input[type=number] { text-align: center; }
+.quick-timer .quick-left { font-variant-numeric: tabular-nums; }
+.quick-timer.run .quick-left { color: var(--accent); font-weight: 600; }
+.quick-timer.rang { background: color-mix(in srgb, var(--ok) 12%, transparent); border-radius: 8px; }

@@ -1,5 +1,9 @@
 import { createFocusView } from './focus-view.js';
 import { createTimers } from './timers.js';
+import { askNotifications, chime, enableAudio, notify } from './sound.js';
+import {
+  addQuickTimer, dueReminders, expireQuickTimers, leftMs, loadQuickTimers, removeQuickTimer, saveQuickTimers, toggleQuickTimer,
+} from './quick-timers.js';
 import { strings } from './strings.js';
 import { localIsoMinutes, today } from './util.js';
 import {
@@ -117,7 +121,20 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   reminderForm.append(reminderText, formControl(s.when, reminderAt),
     formControl(s.repeat, reminderRepeat), addReminderButton);
   reminders.append(el('h2', s.reminders), reminderRows, laterLabel, reminderForm);
-  aside.append(reminders, summary); // «Сделано» sits under the reminders, as in the Console
+  // Quick timers: a short comment + minutes, with a sound at the end (kept on this device).
+  const quick = el('section', undefined, 'today-card');
+  const quickRows = el('ul', undefined, 'today-rows');
+  const quickForm = el('form', undefined, 'today-form quick-form');
+  const quickLabel = input('text', s.quickLabel);
+  quickLabel.placeholder = s.quickLabel;
+  quickLabel.maxLength = 60;
+  const quickMinutes = input('number', s.quickMinutes);
+  quickMinutes.min = '1'; quickMinutes.max = '600'; quickMinutes.value = '10';
+  const quickStart = el('button', s.quickStart);
+  quickStart.type = 'submit';
+  quickForm.append(quickLabel, quickMinutes, quickStart);
+  quick.append(el('h2', s.quickTimers), quickRows, quickForm);
+  aside.append(reminders, quick, summary); // «Сделано» sits under the reminders, as in the Console
   body.append(plan, aside);
 
   const dialog = el('dialog', undefined, 'today-dialog');
@@ -159,6 +176,69 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   let focusTimer;
   const timers = createTimers({ persistent: !fixture, onTick: updateTimers });
   const now = () => fixture && data ? new Date(data[planPath].date + 'T10:30') : new Date();
+  let store;
+  try { if (!fixture) store = window.localStorage; } catch { /* storage unavailable */ }
+  let quickList = loadQuickTimers(store);
+  const RANG_KEY = 'prp.remindersRang';
+  let rangReminders;
+  try { rangReminders = new Set(JSON.parse(store?.getItem(RANG_KEY) ?? '[]')); } catch { rangReminders = new Set(); }
+
+  function setQuick(list) { quickList = list; saveQuickTimers(store, list); renderQuick(); }
+  function renderQuick() {
+    const at = Date.now();
+    quickRows.replaceChildren(...quickList.map(t => {
+      const row = el('li', undefined, 'today-reminder quick-timer' + (t.rang ? ' rang' : '') + (t.end ? ' run' : ''));
+      const info = el('div', undefined, 'today-row-info');
+      info.append(el('p', t.label || s.quickNoLabel, 'today-row-title'));
+      const ms = leftMs(t, at);
+      const time = el('p', t.rang ? s.quickDone(t.minutes) : String(Math.floor(ms / 60000)).padStart(2, '0') + ':' +
+        String(Math.floor(ms / 1000) % 60).padStart(2, '0'), 'today-muted quick-left');
+      time.dataset.qt = t.id;
+      info.append(time);
+      const controls = el('div', undefined, 'today-reminder-actions');
+      if (!t.rang) controls.append(button(t.end ? '❚❚' : '▶', () => setQuick(toggleQuickTimer(quickList, t.id, Date.now())),
+        { label: t.end ? s.pause : s.start, className: 'today-text-button' }));
+      controls.append(button('✕', () => setQuick(removeQuickTimer(quickList, t.id)), { label: s.quickRemove, className: 'today-text-button' }));
+      row.append(info, controls);
+      return row;
+    }));
+    quick.classList.toggle('empty', !quickList.length);
+  }
+  quickForm.addEventListener('submit', event => {
+    event.preventDefault();
+    enableAudio();
+    askNotifications();
+    setQuick(addQuickTimer(quickList, quickLabel.value, quickMinutes.value, Date.now()));
+    quickLabel.value = '';
+  });
+  // one ticker for quick timers and due reminders
+  setInterval(() => {
+    const at = Date.now();
+    const { list, rang } = expireQuickTimers(quickList, at);
+    if (rang.length) {
+      setQuick(list);
+      chime('timer');
+      for (const t of rang) { message(s.quickRang(t.label || s.quickNoLabel)); notify('⏱ ' + (t.label || s.quickNoLabel), s.quickDone(t.minutes)); }
+    } else {
+      for (const node of quickRows.querySelectorAll('[data-qt]')) {
+        const t = quickList.find(x => x.id === node.dataset.qt);
+        if (t && !t.rang && t.end) {
+          const ms = leftMs(t, at);
+          node.textContent = String(Math.floor(ms / 60000)).padStart(2, '0') + ':' + String(Math.floor(ms / 1000) % 60).padStart(2, '0');
+        }
+      }
+    }
+    const reminderList = data?.[reminderPath]?.reminders;
+    if (!fixture && reminderList) {
+      const due = dueReminders(reminderList, rangReminders, at, localIsoMinutes(new Date(at)));
+      if (due.length) {
+        for (const r of due) { rangReminders.add(r.id + '@' + r.at); message('⏰ ' + r.text); notify('⏰ ' + r.text, r.at.slice(11, 16)); }
+        try { store?.setItem(RANG_KEY, JSON.stringify([...rangReminders].slice(-200))); } catch { /* keep in memory */ }
+        chime('reminder');
+        renderReminders();
+      }
+    }
+  }, 1000);
 
   function message(text, isError = false) {
     clearTimeout(toastTimeout);
@@ -764,6 +844,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
       return row;
     }));
     renderReminders();
+    renderQuick();
     renderDailyIdeas();
     timers.tick();
   }
