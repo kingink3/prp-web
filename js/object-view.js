@@ -4,7 +4,7 @@ import { areasPath } from './lab-data.js';
 import { editChecklist, editIdeaComment, editStatus, isObjectPath, objectCard, objectList, parseAreas,
   saveObjectEdit, statusOptions, taskReference } from './objects.js';
 import { strings } from './strings.js';
-import { addIdeaToPlan, addObjectToPlan, ideaInPlan, planPath } from './today-data.js';
+import { addIdeaToPlan, addObjectToPlan, editDailyIdea, ideaInPlan, planPath } from './today-data.js';
 import { today } from './util.js';
 import { appendLinkedText, button, el, link } from './work-dom.js';
 
@@ -417,7 +417,11 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
     const active = scope;
     try {
       current.plan = await readPlan(active);
-      if (current === view) updatePlanButtons();
+      if (current === view) {
+        // ideas of the day come from the plan: draw them once it is loaded
+        if (!current.path && (current.plan?.ideas ?? []).some(idea => !idea.reaction)) render();
+        else updatePlanButtons();
+      }
     } catch {
       if (current !== view) return;
       feedback(s.planLoadError, true);
@@ -428,6 +432,48 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
     } finally {
       onResponse(active.client);
     }
+  }
+
+  // «Идеи дня» from today.json (unreacted) — reacted to here, not on «Сегодня».
+  function renderDailyIdeas() {
+    const plan = view.plan;
+    const ideas = (plan?.ideas ?? []).filter(idea => !idea.reaction);
+    if (!ideas.length) return [];
+    const labels = strings.work;
+    const section = el('section', undefined, 'work-group daily-ideas');
+    section.append(el('h2', labels.dailyIdeas + ' · ' + ideas.length));
+    for (const idea of ideas) {
+      const id = idea.id ?? idea.ref;
+      const row = el('article', undefined, 'work-card work-daily-idea');
+      const card = view.cards.find(c => c.id === id);
+      row.append(el('h3', undefined));
+      row.lastChild.append(card ? link(idea.title ?? id, objectHref('ideas', card.path)) : idea.title ?? id);
+      const pitch = idea.pitch ?? idea.summary;
+      if (pitch) row.append(el('p', pitch, 'work-text'));
+      if (idea.main_risk) row.append(el('p', s.riskLine(idea.main_risk), 'work-muted'));
+      const react = (patch, commit) => transact(async active => {
+        view.plan = await writePlan(active, plan.date, data => editDailyIdea(data, idea, patch), commit);
+      });
+      const reactions = el('div', undefined, 'actions work-reactions');
+      for (const [reaction, [icon, label]] of Object.entries(labels.reactions)) {
+        reactions.append(mutable(button(icon, () => react({ reaction }, 'daily idea reaction'), { label })));
+      }
+      const comment = el('input');
+      comment.type = 'text';
+      comment.value = ideaDrafts?.get?.(id) ?? idea.comment ?? '';
+      comment.placeholder = labels.ownerComment + ' (Enter — сохранить)';
+      comment.setAttribute('aria-label', labels.ownerComment);
+      comment.className = 'daily-idea-comment';
+      comment.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        react({ comment: comment.value.trim() }, 'daily idea comment');
+      });
+      reactions.append(mutable(comment));
+      row.append(reactions);
+      section.append(row);
+    }
+    return [section];
   }
 
   function renderIdeas() {
@@ -462,7 +508,7 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
     filters.append(tabs, select);
     const cards = el('div', undefined, 'work-group idea-list');
     cards.append(...(visible.length ? visible.map(renderIdea) : [el('p', s.noIdeas, 'work-muted')]));
-    return [filters, cards];
+    return [...renderDailyIdeas(), filters, cards];
   }
 
   function render() {

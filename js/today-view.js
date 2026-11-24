@@ -98,7 +98,8 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   const dailyIdeas = el('section', undefined, 'today-card today-daily-ideas');
   const ideaRows = el('div', undefined, 'work-group');
   dailyIdeas.append(el('h2', strings.work.dailyIdeas), ideaRows);
-  plan.append(dailyIdeas);
+  // Ideas of the day live on the «Идеи» tab now.
+  dailyIdeas.hidden = true;
 
   const aside = el('aside', undefined, 'today-column');
   const reminders = el('section', undefined, 'today-card');
@@ -769,7 +770,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   function renderDailyIdeas() {
     const labels = strings.work;
     const ideas = (data[planPath].ideas ?? []).filter(idea => !idea.reaction);
-    dailyIdeas.hidden = !ideas.length;
+    dailyIdeas.hidden = true;
     ideaRows.replaceChildren(...ideas.map(idea => {
       const id = idea.id ?? idea.ref;
       const row = el('article', undefined, 'work-card work-daily-idea');

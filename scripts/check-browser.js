@@ -402,18 +402,18 @@ try {
   const fixtureRequests = count => evaluate("document.querySelector('#fixture-requests:not([hidden])')?.dataset.count === '" + count + "'");
   await send('Page.navigate', { url: url + '?fixtures=1&cold=today#today' });
   await waitFor(() => fixtureRequests(4));
-  await waitFor(() => visible('#today-panel:not([hidden]) .today-daily-ideas:not([hidden])'));
-  await evaluate("document.querySelector('.today-daily-ideas textarea').value = 'Daily owner note'");
-  await click('.today-daily-ideas .work-comment button');
-  await idle();
-  assert.equal(await evaluate("document.querySelector('.today-daily-ideas textarea').value"), 'Daily owner note');
-  await click('.today-daily-ideas .work-reactions button:nth-child(2)');
-  await idle();
+  // ideas of the day are not on «Сегодня» any more — they open the «Идеи» tab
   assert.equal(await visible('#today-panel:not([hidden]) .today-daily-ideas:not([hidden])'), false);
 
   await send('Page.navigate', { url: url + '?fixtures=1&cold=ideas#ideas' });
   await waitFor(() => fixtureRequests(2));
   await waitFor(() => visible('.idea-list .work-idea'));
+  await waitFor(() => visible('.daily-ideas .work-daily-idea'));
+  await evaluate("const c = document.querySelector('.daily-idea-comment'); c.value = 'Daily owner note'; c.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))");
+  await workIdle();
+  await click('.daily-ideas .work-reactions button:nth-child(2)');
+  await workIdle();
+  assert.equal(await visible('.daily-ideas'), false);
   assert.equal(await evaluate("document.querySelectorAll('.idea-list .work-idea').length"), 2);
   assert.equal(await visible('#today-panel:not([hidden]) .today-daily-ideas:not([hidden])'), false);
   assert.equal(await visible('.idea-list .work-comment'), false);

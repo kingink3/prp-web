@@ -64,6 +64,7 @@ export const strings = {
     ideaEdit: '✎ правка (Enter — в карточку)',
     ideaEdited: 'Добавлена правка к идее',
     ideaAdd: '+ на сегодня',
+    riskLine: risk => 'Риск: ' + risk,
     ideaInPlan: 'в плане ✓',
     noIdeas: 'Карточек с идеями пока нет.',
     ownerComment: 'Комментарий владельца',
