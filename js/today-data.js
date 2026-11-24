@@ -54,6 +54,19 @@ export function setNotes(data, key, id, notes) {
   });
 }
 
+// ✎ edit: the visible text (`title` of a plan item, `text` of a to-do) and the planned minutes of a plan item.
+export function setText(data, key, id, { text, minutes } = {}) {
+  return change(data, key, id, item => {
+    const field = Object.hasOwn(item, 'title') ? 'title' : 'text';
+    const next = { ...item };
+    const value = String(text ?? '').trim().slice(0, 300);
+    if (value) next[field] = value;
+    const mins = Number(minutes);
+    if (field === 'title' && Number.isInteger(mins) && mins >= 1 && mins <= 600) next.minutes = mins;
+    return next[field] === item[field] && next.minutes === item.minutes ? item : next;
+  });
+}
+
 export const removeItem = (data, key, id) => change(data, key, id, () => null);
 
 export function addObjectToPlan(data, card, at) {
@@ -204,7 +217,7 @@ export function planGroups(plan, todoList, statuses) {
 
 export function rowActions({ item, path }) {
   if (item.done) return [];
-  const actions = ['focus', 'notes', item.important ? 'unimportant' : 'makeImportant'];
+  const actions = ['edit', 'focus', 'notes', item.important ? 'unimportant' : 'makeImportant'];
   if (path === planPath) actions.push('postpone');
   return actions;
 }

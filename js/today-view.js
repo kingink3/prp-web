@@ -6,7 +6,7 @@ import {
   addReminder, addTodo, carryDue, clearDone, completeReminder, emptyLists, planGroups, planPath,
   editDailyIdea, focusOrder, nextFocusRow, planProgress, reminderPath, reorder, rowActions, rowRank,
   setDone, setImportant,
-  setNotes, snooze, splitReminders, todoPath, unpostpone, postpone,
+  setNotes, setText, snooze, splitReminders, todoPath, unpostpone, postpone,
 } from './today-data.js';
 
 const s = strings.todayView;
@@ -319,6 +319,22 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     return ok;
   }
 
+  function editText(row) {
+    const isPlan = row.path === planPath;
+    const text = el('textarea');
+    text.value = (isPlan ? row.item.title : row.item.text) ?? '';
+    const fields = [formControl(s.editText, text)];
+    let minutes;
+    if (isPlan) {
+      minutes = input('number', s.editMinutes);
+      minutes.min = '1'; minutes.max = '600';
+      minutes.value = row.item.minutes ?? '';
+      fields.push(formControl(s.editMinutes, minutes));
+    }
+    openDialog(s.editTitle, fields, () =>
+      editRow(row, (list, key, id) => setText(list, key, id, { text: text.value, minutes: minutes?.value }), 'edit item'));
+  }
+
   function editNotes(row) {
     const fields = {};
     const controls = ['comment', 'blocker'].map(key => {
@@ -614,6 +630,7 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
     const callbacks = {
       focus: () => openFocus(row, trigger),
       notes: () => editNotes(row),
+      edit: () => editText(row),
       makeImportant: toggleImportant,
       unimportant: toggleImportant,
       postpone: () => postponeRow(row),

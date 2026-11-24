@@ -310,7 +310,7 @@ try {
   const todoId = 'td-1900000001';
   await click('[data-id=' + todoId + '] summary');
   assert.deepEqual(await evaluate("[...document.querySelectorAll('[data-id=" + todoId + "] .rowmenu button')].map(button => button.textContent)"),
-    ['⤢ Фокус', '💬 Комментарий / блокер', '⭐ Важное']);
+    ['✎ Редактировать', '⤢ Фокус', '💬 Комментарий / блокер', '⭐ Важное']);
   await menu('t4', '⤢ Фокус');
   assert.equal(await focusTitle(), 'Call the plumber');
   await evaluate("document.querySelector('.focus-notes textarea').value = '<b>Saved with completion</b>'");
