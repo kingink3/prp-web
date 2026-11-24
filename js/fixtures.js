@@ -8,6 +8,7 @@ export function createFixtureClient() {
     if (edits.has(path)) return { text: edits.get(path) };
     try {
       const { default: text } = await fixtureModule(path);
+      if (typeof text !== 'string') throw new Error('Fixture does not exist');
       return { text };
     } catch {
       throw Object.assign(new Error('Fixture unavailable'), { status: 404 });

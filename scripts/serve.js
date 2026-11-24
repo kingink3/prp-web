@@ -31,7 +31,11 @@ export function createFixtureServer(prefix = '/') {
           });
         data = 'export default ' + JSON.stringify(entries.filter(entry => entry.isFile()).map(entry => entry.name)) + ';\n';
       } else if (fixture) {
-        data = 'export default ' + JSON.stringify(await readFile(new URL(path.slice(0, -3), root), 'utf8')) + ';\n';
+        const text = await readFile(new URL(path.slice(0, -3), root), 'utf8').catch(error => {
+          if (error.code === 'ENOENT') return null;
+          throw error;
+        });
+        data = 'export default ' + JSON.stringify(text) + ';\n';
       } else data = await readFile(new URL(path, root));
       response.writeHead(200, { 'Content-Type': types[extname(path)], 'Cache-Control': 'no-store' }).end(data);
     } catch (error) {
