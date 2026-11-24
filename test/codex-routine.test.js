@@ -16,13 +16,14 @@ test('routine accepts only supported commands and complete arguments', () => {
   ]) assert.equal(routinePayload(' ' + input + '\n'), input, input);
 
   for (const input of [
-    '', 'что угодно', 'extra_lesson now', 'ideas:', 'ideas: \n ', 'Ideas: topic',
+    '', 'что угодно', 'extra_lesson now', 'ideas:', 'ideas: \n ',
     'critic: 42', 'critic: project-20300115-course-builder', 'critic: idea-abc',
     'critic: idea-20300115-course-builder more', 'кодекс:', 'codex-review: 01',
     'codex-review: 0', 'ок: -3', 'ок: 1.5', 'ок: 42\nextra_lesson',
     'ок: owner/repo#', 'ок: owner/repo#42#7', 'ок: https://github.com/owner/repo/pull/42',
     'ок: owner/..#1',
   ]) assert.equal(routinePayload(input), null, input);
+  assert.equal(routinePayload('Ideas: topic'), 'ideas: topic'); // names are normalised
 });
 
 test('routine fire URL is restricted to the exact HTTPS API origin', () => {
@@ -136,4 +137,18 @@ test('Codex PRs link to the right repository and qualify external approvals', ()
   assert.equal(codexPullRequest({ ...task, repo: 'owner/repo', pr: '1?bogus' }, 'owner/repo'), null);
   assert.equal(codexPullRequest({ ...task, repo: 'javascript:alert(1)', pr: 42 }), null);
   assert.equal(codexPullRequest(task, 'owner/repo'), null);
+});
+
+import { normalizeRequest, routinePayload as payload2 } from '../js/routine.js';
+import assertStrict from 'node:assert/strict';
+import testFn from 'node:test';
+
+testFn('Russian names and dashes become the exact routine form', () => {
+  assertStrict.equal(normalizeRequest('идеи - генератор лиц'), 'ideas: генератор лиц');
+  assertStrict.equal(normalizeRequest('Критик idea-20300115-sample-tool'), 'critic: idea-20300115-sample-tool');
+  assertStrict.equal(normalizeRequest('ещё урок'), 'extra_lesson');
+  assertStrict.equal(normalizeRequest('codex-review: 3'), 'codex-review: 3');
+  assertStrict.equal(normalizeRequest('кодекс — сделать X'), 'кодекс: сделать X');
+  assertStrict.equal(payload2('тест idea-20300115-sample-tool'), 'test: idea-20300115-sample-tool');
+  assertStrict.equal(payload2('тест чего-то'), null);
 });
