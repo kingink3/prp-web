@@ -102,6 +102,15 @@ items with `until` ≤ date into `items` with `carried: true` (`labctl.new_day`,
 Optional item field `spent` is a non-negative integer with the actual minutes worked, measured by the
 timer. It accumulates across sessions and is kept in history. A present `0` is a measured value.
 
+## objects.json (repo root, generated)
+Front matter of every object (`projects/`, `learning/`, `ideas/`, `experiments/`, `notes/`) in one file,
+plus `path` and, for projects, `tasks_total` / `tasks_done`. Written by `labctl index` (CI, on every push);
+never edit by hand. Clients use it for lists and read the single `.md` file only for a detail view.
+```json
+{"generated": "2026-11-24T12:00", "objects": [{"id": "idea-…", "type": "idea", "title": "…", "status": "liked",
+  "area": "ideas", "purpose": "money", "main_risk": "…", "next_step": "…", "last_touched": "2026-11-24", "path": "ideas/idea-….md"}]}
+```
+
 ## history/<YYYY-MM-DD>.json
 Written by `labctl apply` (CI): the day's plan as it ended (`items` with done/done_at/comment/blocker),
 `postponed` (moved away that day) and `todos` (plain to-dos done that day, kept here before
@@ -178,10 +187,6 @@ precise «Done when». Without `effort` it is derived from the task size (`labct
 Status: `ready` (prepared, owner to send) → `sent` (owner copied it to Codex) → `review` (PR open,
 waiting for Claude) → `changes` (Claude asked for fixes; `fix` holds the follow-up text to paste into
 the same Codex task) → `merged` | `cancelled`. The prompt is built by `labctl.codex_prompt()`.
-The web prompt includes the task ID and title, repository, model and effort, task text, and acceptance
-criteria. It includes the line “Read AGENTS.md (and README) of this repository first and follow them.”
-The rules include the task branch when provided, the task ID in the PR title, and verification and PR
-instructions. If a legacy record has no model or effort, the web client uses GPT-6.2 Sol and medium.
 CI (`.github/workflows/codex.yml`) moves tasks to `review` / `merged` from PR events.
 
 ## todo.json (repo root)
