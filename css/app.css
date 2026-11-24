@@ -704,3 +704,8 @@ html:has(.focus-view[open]) { overflow: hidden; }
 .quick-timer .quick-left { font-variant-numeric: tabular-nums; }
 .quick-timer.run .quick-left { color: var(--accent); font-weight: 600; }
 .quick-timer.rang { background: color-mix(in srgb, var(--ok) 12%, transparent); border-radius: 8px; }
+
+/* Ideas of the day on the «Идеи» tab */
+.daily-ideas { margin-bottom: 18px; }
+.daily-ideas .work-reactions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.daily-idea-comment { flex: 1 1 220px; min-width: 0; }
