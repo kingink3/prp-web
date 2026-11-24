@@ -10,6 +10,14 @@ const monthFormat = new Intl.DateTimeFormat('ru', { month: 'long', year: 'numeri
 const dayFormat = new Intl.DateTimeFormat('ru', { dateStyle: 'long', timeZone: 'UTC' });
 const batchSize = 7;
 
+function paintActivity(cell, day) {
+  if (!cell || !day) return;
+  const count = day.done.length + day.todos.length;
+  if (!count || cell.querySelector('.calendar-count')) return;
+  cell.classList.add('lvl' + Math.min(count, 3));
+  cell.append(el('span', String(count), 'calendar-count'));
+}
+
 function dayRows(rows) {
   const list = el('ul', undefined, 'work-list calendar-rows');
   for (const item of rows) {
@@ -42,7 +50,9 @@ export function createCalendarView(panel, { fixture, onResponse }) {
       const label = String(Number(date.slice(-2)));
       if (!state.dates.includes(date)) return el('span', label, 'calendar-day');
       const cell = button(label, () => selectDay(date), 'calendar-day has-data');
+      cell.dataset.date = date;
       cell.setAttribute('aria-label', dayFormat.format(new Date(date)));
+      paintActivity(cell, state.loaded.get(date));
       cell.setAttribute('aria-pressed', String(date === state.selected));
       if (date === state.today) cell.setAttribute('aria-current', 'date');
       return cell;
@@ -108,7 +118,9 @@ export function createCalendarView(panel, { fixture, onResponse }) {
     if (state.requests.has(date)) return state.requests.get(date);
     state.failed.delete(date);
     const request = state.client.getFile('history/' + date + '.json').then(({ text }) => {
-      state.loaded.set(date, parseHistoryDay(text, date));
+      const day = parseHistoryDay(text, date);
+      state.loaded.set(date, day);
+      if (state === view) paintActivity(state.grid.querySelector('[data-date="' + date + '"]'), day);
     }).catch(error => {
       state.failed.add(date);
       throw error;

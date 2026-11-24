@@ -39,3 +39,13 @@ jobs:
           name: directions-ideas-calendar-screenshots
           path: ${{ runner.temp }}/prp-screenshots/work-*.png
           if-no-files-found: ignore
+
+      - name: Save Console design screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: console-design-screenshots
+          path: |
+            ${{ runner.temp }}/prp-screenshots/design-*.png
+            ${{ runner.temp }}/prp-screenshots/design-comparison.html
+          if-no-files-found: ignore

@@ -22,13 +22,23 @@ function textBlock(value) {
 function renderCard(card, route) {
   const anchor = link('', objectHref(route, card.path), 'work-card work-object');
   const head = el('div', undefined, 'work-card-head');
-  head.append(el('strong', card.title), el('span', statusLabel(card.status), 'work-status'));
+  const badge = el('span', statusLabel(card.status), 'badge');
+  if (card.status) badge.dataset.status = card.status;
+  head.append(el('strong', card.title), badge);
   anchor.append(head);
   if (card.nextStep) anchor.append(el('p', card.nextStep));
   const facts = [s.type[card.type]];
   if (card.progress) facts.push(s.progress + ' ' + card.progress.join('/'));
   if (card.age !== null) facts.push(s.age(card.age));
   anchor.append(el('small', facts.join(' · '), 'work-muted'));
+  if (card.progress?.[1]) {
+    const [done, total] = card.progress;
+    const progress = el('progress', undefined, 'pbar');
+    progress.max = total;
+    progress.value = done;
+    progress.setAttribute('aria-label', s.progress);
+    anchor.append(progress);
+  }
   return anchor;
 }
 
@@ -169,9 +179,11 @@ export function createObjectView(panel, { fixture, onResponse }) {
       tabs.append(tab);
     }
     const cards = selectedArea === null ? other : view.cards.filter(card => card.area === selectedArea);
+    const column = el('div', undefined, 'work-column');
     const grid = el('div', undefined, 'work-grid');
     grid.append(...cards.map(card => renderCard(card, view.route)));
-    return [tabs, cards.length ? grid : el('p', s.noCards, 'work-muted')];
+    column.append(cards.length ? grid : el('p', s.noCards, 'work-muted'));
+    return [tabs, column];
   }
 
   function detailFields(card) {
@@ -241,7 +253,7 @@ export function createObjectView(panel, { fixture, onResponse }) {
   }
 
   function renderDetail(card) {
-    const back = link(s.back, '#' + view.route, 'work-back');
+    const back = link(s.back, '#' + view.route, 'btn work-back');
     if (!card) return [back, el('p', s.noObject)];
     const summary = el('section', undefined, 'work-card');
     summary.append(el('p', s.type[card.type] + ' · ' + (statusLabel(card.status) ?? ''), 'work-muted'));

@@ -55,7 +55,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
   const status = el('div', undefined, 'today-status');
   status.setAttribute('role', 'status');
   const body = el('div', undefined, 'today-grid');
-  const progress = el('progress');
+  const progress = el('progress', undefined, 'bbar');
   progress.setAttribute('aria-label', s.progress);
   const count = el('p', undefined, 'today-count');
   const summary = el('div', undefined, 'today-summary');
@@ -351,6 +351,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
       const seconds = Math.max(0, Math.ceil((timer.end - time) / 1000));
       entry.duration.textContent = timer.end
         ? Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') : s.minutes(timer.minutes);
+      entry.timer.classList.toggle('run', Boolean(timer.end) && !timer.rang);
       entry.duration.disabled = Boolean(timer.end);
       entry.control.textContent = timer.end ? '■' : '▶';
       entry.control.setAttribute('aria-label', timer.end ? s.stop : s.start);
@@ -449,7 +450,9 @@ export function createTodayView(panel, { fixture, onResponse }) {
 
   function renderRow(row, group) {
     const { item, path, key } = row;
-    const node = el('li', undefined, 'today-row');
+    const node = el('li', undefined, 'row today-row');
+    node.dataset.kind = path === todoPath ? 'todo' : item.kind ?? 'custom';
+    node.classList.toggle('imp', Boolean(item.important));
     node.dataset.id = item.id;
     node.dataset.path = path;
     node.classList.toggle('is-done', Boolean(item.done));
@@ -457,7 +460,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
     const complete = button(item.done ? '✓' : '', () => {
       const at = now();
       set((list, key, id) => setDone(list, key, id, !item.done, at), item.done ? 'reopen item' : 'complete item');
-    }, { label: item.done ? s.undoDone : s.markDone, className: 'today-icon today-check', disabled: pending });
+    }, { label: item.done ? s.undoDone : s.markDone, className: 'chk today-check', disabled: pending });
     complete.setAttribute('aria-pressed', String(Boolean(item.done)));
     const info = el('div', undefined, 'today-row-info');
     const title = el('p', undefined, 'today-row-title');
@@ -476,15 +479,15 @@ export function createTodayView(panel, { fixture, onResponse }) {
 
     const trailing = el('div', undefined, 'today-row-actions');
     if (!item.done) {
-      const timer = el('div', undefined, 'today-timer');
+      const timer = el('div', undefined, 'timer today-timer');
       const timerId = timerKey(row);
       const duration = button('', () => editDuration(timerId), { label: s.duration, className: 'today-time' });
       const control = button('', () => {
         if (timers.get(timerId).end) timers.stop(timerId);
         else timers.start(timerId);
         updateTimers(Date.now());
-      }, { className: 'today-icon' });
-      timerRows.push({ row, key: timerId, duration, control });
+      }, { className: 'today-icon tbtn' });
+      timerRows.push({ row, key: timerId, timer, duration, control });
       timer.append(duration, control);
       trailing.append(timer);
     }
@@ -493,7 +496,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
     };
     attachImportance(info, toggleImportant);
     const menu = el('details', undefined, 'today-menu');
-    const menuLabel = el('summary', '…', 'today-icon');
+    const menuLabel = el('summary', '…', 'btn small');
     menuLabel.setAttribute('aria-label', s.rowActions);
     const commands = el('div', undefined, 'today-menu-items');
     function command(text, action) {
@@ -539,7 +542,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
       const complete = button('✓', () => {
         const at = now();
         apply(reminderPath, list => completeReminder(list, item.id, item.at, at), 'complete reminder');
-      }, { disabled: pending, label: s.reminderDone, className: 'today-icon today-check' });
+      }, { disabled: pending, label: s.reminderDone, className: 'chk today-check' });
       row.append(complete, text, controls);
       return row;
     }));

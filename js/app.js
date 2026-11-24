@@ -47,6 +47,18 @@ const status = byId('connection-status');
 const warning = byId('expiry-warning');
 const themeField = byId('theme');
 const tabs = [...document.querySelectorAll('[data-tab]')];
+function revealActiveTab() {
+  const active = tabs.find(tab => tab.hasAttribute('aria-current'));
+  if (!active) return;
+  const nav = active.parentElement;
+  const track = nav.getBoundingClientRect();
+  const tab = active.getBoundingClientRect();
+  const offset = Math.min(0, tab.left - track.left - 3) || Math.max(0, tab.right - track.right + 3);
+  if (offset) nav.scrollLeft += offset;
+}
+
+window.addEventListener('resize', revealActiveTab);
+
 const routes = new Set([...tabs.map(tab => tab.dataset.tab), 'settings']);
 let settings = readSettings(SETTINGS_KEY);
 let savedToken = fixtureMode ? null : readStorage(TOKEN_KEY);
@@ -84,6 +96,7 @@ function showRoute() {
     if (tab.dataset.tab === selected) tab.setAttribute('aria-current', 'page');
     else tab.removeAttribute('aria-current');
   }
+  revealActiveTab();
   const branch = settings.branch || 'main';
   const client = fixtureClient || (connected ? connectionFor(settings.repository, branch, savedToken) : null);
   todayPanel.hidden = route !== 'today';
