@@ -688,3 +688,10 @@ html:has(.focus-view[open]) { overflow: hidden; }
   .calendar-count { margin-top: 2px; }
   .calendar-detail { scroll-margin-top: calc(108px + env(safe-area-inset-top)); }
 }
+
+/* Rows are dragged as a whole; the ⠿ button is kept only for keyboard reordering (visible on focus). */
+.today-drag { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.today-drag:focus-visible { position: static; width: auto; height: auto; clip-path: none; }
+.today-row { -webkit-touch-callout: none; }
+.today-row:not(.done) { cursor: grab; }
+.today-row.dragging { cursor: grabbing; }

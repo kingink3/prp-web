@@ -230,17 +230,18 @@ try {
   assert.equal(await evaluate("document.querySelectorAll(" + JSON.stringify(todoSelector) + ").length"), 2);
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-  const points = await evaluate("[...document.querySelectorAll(" + JSON.stringify(todoSelector + " .today-drag") +
-    ")].map(button => { const r = button.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })");
+  // Rows are dragged as a whole: on touch, hold ~0.3 s and move.
+  const points = await evaluate("[...document.querySelectorAll(" + JSON.stringify(todoSelector + " .today-row-title") +
+    ")].map(title => { const r = title.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })");
   await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [points[1]] });
+  await delay(450);
+  await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: points[1].x, y: (points[1].y + points[0].y) / 2 }] });
   await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [points[0]] });
   await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await idle();
   assert.equal(await evaluate("document.querySelector(" + JSON.stringify(todoSelector) + ").textContent.includes('Browser fixture to-do')"), true);
-  const importantPoint = await evaluate("(() => { const r = document.querySelector('[data-path=\"todo.json\"] .today-row-title').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()");
-  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [importantPoint] });
-  await delay(600);
-  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  // ⭐ important: right click (mouse); on touch it lives in the «⋯» menu.
+  await evaluate("document.querySelector('[data-path=\"todo.json\"] .today-row-title').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))");
   await idle();
   assert.equal(await visible('[data-path="todo.json"] .today-star'), true);
   await click('.todo-form + button');
@@ -357,8 +358,7 @@ try {
     await capture('work-' + name, 390, 844);
   }
   await click('[data-tab=directions]');
-  await waitFor(() => visible('.work-tabs button'));
-  assert.equal(await evaluate("document.querySelectorAll('.work-tabs button').length"), 5);
+  await waitFor(async () => await evaluate("document.querySelectorAll('.work-tabs button').length") === 5);  // areas load after the first paint
   await evaluate("[...document.querySelectorAll('.work-tabs button')].find(button => button.textContent === 'Проекты').click()");
   assert.match(await evaluate("document.querySelector('.work-object').textContent"), /Sample app.*Draft landing copy.*1\/3.*1 дн\. назад/);
   assert.equal(await evaluate("document.querySelector('.work-object progress').value"), 1);
