@@ -21,7 +21,10 @@
    "created": "2030-01-10",
    "last_touched": "2030-01-13",
    "next_step": "List three sample recipes",
-   "path": "ideas/idea-20300110-sample-notebook.md"
+   "path": "ideas/idea-20300110-sample-notebook.md",
+   "area": "hobby",
+   "purpose": "interest",
+   "origin": "owner"
   },
   {
    "id": "idea-20300115-sample-tool",
@@ -37,7 +40,9 @@
    "tags": [],
    "links": [],
    "next_step": "Ask 5 people",
-   "path": "ideas/idea-20300115-sample-tool.md"
+   "path": "ideas/idea-20300115-sample-tool.md",
+   "origin": "agent",
+   "main_risk": "Prices may differ from shelf labels."
   },
   {
    "id": "learning-20300101-sample-course",

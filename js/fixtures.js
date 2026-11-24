@@ -3,8 +3,10 @@ export const fixtureMode = ['localhost', '127.0.0.1', '[::1]'].includes(location
 
 export function createFixtureClient() {
   const edits = new Map();
+  let requests = 0;
   const fixtureModule = path => import(new URL('../fixtures/lab/' + path + '.js', import.meta.url));
   async function getFile(path) {
+    requests++;
     if (edits.has(path)) return { text: edits.get(path) };
     try {
       const { default: text } = await fixtureModule(path);
@@ -16,7 +18,9 @@ export function createFixtureClient() {
   }
   return {
     getFile,
+    get requests() { return requests; },
     async listDir(path) {
+      requests++;
       const { default: names } = await fixtureModule(path + '/.index');
       const all = new Set(names);
       for (const file of edits.keys()) {
@@ -31,7 +35,10 @@ export function createFixtureClient() {
         return { text: initial };
       });
       const text = mutate(current.text);
-      edits.set(path, text);
+      if (text !== current.text) {
+        requests++;
+        edits.set(path, text);
+      }
       return { text };
     },
   };

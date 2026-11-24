@@ -26,7 +26,7 @@ export function consoleMarkup(route, theme) {
   }
   header.append(brand, tabs);
   const main = node('main');
-  const panelName = route === 'directions' ? 'objects' : route;
+  const panelName = ['directions', 'ideas'].includes(route) ? 'objects' : route;
   const panel = document.getElementById(panelName + '-panel').cloneNode(true);
   panel.querySelectorAll('dialog, [hidden]').forEach(element => element.remove());
   panel.querySelectorAll('button:not(.chk, .tbtn, .calendar-day, .work-tabs button)').forEach(button => button.classList.add('btn'));
@@ -41,12 +41,20 @@ export function consoleMarkup(route, theme) {
     ['.today-row-actions, .today-reminder-actions', 'item-actions'],
     ['.chk[aria-pressed="true"], .work-tabs [aria-current]', 'on'],
     ['.today-time', 'timer-edit'], ['.today-card, .today-summary, .work-object, .work-card', 'card'],
-    ['.work-tabs', 'subtabs'], ['.work-column', 'col'], ['.work-object', 'compact'],
+    ['.work-tabs', 'subtabs'], ['.idea-meta, .idea-risk', 'meta'],
+    ['.idea-filters, .idea-actions', 'inline'], ['.idea-reactions', 'react'],
+    ['.idea-reactions [aria-pressed="true"]', 'on'], ['.work-column', 'col'], ['.work-object', 'compact'],
     ['.work-card-head', 'ct'], ['.work-card-head strong', 't'],
     ['.calendar-grid', 'cal'], ['.calendar-day', 'cal-d'], ['.calendar-weekday', 'cal-h'],
     ['.calendar-day[aria-current="date"]', 'today'], ['.calendar-day[aria-pressed="true"]', 'sel'],
     ['.calendar-count', 'c'], ['.actions, .today-form', 'inline'],
   ]) mark(source, target);
+  for (const actions of panel.querySelectorAll('.idea-actions')) {
+    const form = actions.querySelector('.idea-edit');
+    const input = form.querySelector('input');
+    actions.classList.add('react');
+    form.replaceWith(input);
+  }
   if (innerWidth >= 700) mark('.work-grid', 'cards');
   if (route === 'settings') panel.classList.add('mbody');
   panel.querySelectorAll('.work-tabs button').forEach(button => { button.dataset.barea = ''; });
@@ -78,7 +86,7 @@ export function consoleMarkup(route, theme) {
 }
 
 export function comparisonHtml(images) {
-  const headings = { today: 'Сегодня', directions: 'Направления', calendar: 'Календарь', settings: 'Настройки' };
+  const headings = { today: 'Сегодня', directions: 'Направления', ideas: 'Идеи', calendar: 'Календарь', settings: 'Настройки' };
   const themes = { light: 'светлая тема', dark: 'тёмная тема' };
   const sections = images.map(({ route, width, theme, name }) =>
     '<h2>' + headings[route] + ' · ' + width + ' px · ' + themes[theme] + '</h2>' +

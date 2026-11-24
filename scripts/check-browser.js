@@ -399,16 +399,71 @@ try {
   await waitFor(() => visible('[data-id^=p-]'));
   assert.match(await evaluate("document.querySelector('[data-id^=p-]').textContent"), /Show to 3 people/);
 
-  await click('[data-tab=ideas]');
-  await waitFor(() => visible('.work-comment'));
-  assert.equal(await evaluate("document.querySelectorAll('.work-object').length"), 2);
+
+  const fixtureRequests = count => evaluate("document.querySelector('#fixture-requests:not([hidden])')?.dataset.count === '" + count + "'");
+  await send('Page.navigate', { url: url + '?fixtures=1&cold=today#today' });
+  await waitFor(() => fixtureRequests(4));
+  await waitFor(() => visible('.today-daily-ideas'));
+  await evaluate("document.querySelector('.today-daily-ideas textarea').value = 'Daily owner note'");
+  await click('.today-daily-ideas .work-comment button');
+  await idle();
+  assert.equal(await evaluate("document.querySelector('.today-daily-ideas textarea').value"), 'Daily owner note');
+  await click('.today-daily-ideas .work-reactions button:nth-child(2)');
+  await idle();
+  assert.equal(await visible('.today-daily-ideas'), false);
+
+  await send('Page.navigate', { url: url + '?fixtures=1&cold=ideas#ideas' });
+  await waitFor(() => fixtureRequests(2));
+  await waitFor(() => visible('.idea-list .work-idea'));
+  assert.equal(await evaluate("document.querySelectorAll('.idea-list .work-idea').length"), 2);
+  assert.equal(await visible('.today-daily-ideas'), false);
+  assert.equal(await visible('.work-comment'), false);
+  assert.match(await evaluate("document.querySelector('.idea-list .work-idea').textContent"), /деньги · Идеи и тесты · новая · от агента.*Риск: Prices/);
+  await waitFor(() => evaluate("!document.querySelector('.idea-plan').disabled"));
   await workCapture('ideas');
-  await click('.work-reactions button:nth-child(2)');
+
+  await click('.idea-filters [data-status=parked]');
+  assert.equal(await evaluate("document.querySelector('.work-idea .work-reactions [aria-pressed=true]').textContent"), '⏸');
+  await evaluate(`(() => {
+    const select = document.querySelector('.idea-filters select');
+    select.value = 'projects';
+    select.dispatchEvent(new Event('change'));
+  })()`);
+  assert.equal(await visible('.work-idea'), false);
+  assert.equal(await evaluate("document.querySelector('.idea-filters [data-status=all]').textContent"), 'все (0)');
+  await evaluate(`(() => {
+    const select = document.querySelector('.idea-filters select');
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+  })()`);
+  await click('.idea-filters [data-status=all]');
+  await click('.work-idea .work-reactions button:nth-child(3)');
   await workIdle();
-  assert.equal(await evaluate("document.querySelector('.work-reactions [aria-pressed=true]').textContent"), '🧪');
-  await evaluate("document.querySelector('.work-comment textarea').value = 'Owner fixture note'");
-  await click('.work-comment button');
+  assert.equal(await evaluate("document.querySelectorAll('.idea-list .work-idea').length"), 1);
+  await click('.idea-filters [data-status=killed]');
+  assert.equal(await evaluate("document.querySelector('.work-idea .work-reactions [aria-pressed=true]').textContent"), '✕');
+  await click('.work-idea .work-reactions button:nth-child(2)');
   await workIdle();
+  await click('.idea-filters [data-status=testing]');
+  assert.equal(await evaluate("document.querySelector('.work-idea .work-reactions [aria-pressed=true]').textContent"), '🧪');
+  await evaluate(`(() => {
+    const input = document.querySelector('.idea-edit input');
+    input.value = '<b>Owner fixture note</b>';
+    input.form.requestSubmit();
+  })()`);
+  await workIdle();
+  await click('.idea-plan');
+  await workIdle();
+  assert.equal(await evaluate("document.querySelector('.idea-plan').textContent"), 'в плане ✓');
+  assert.equal(await evaluate("document.querySelector('.idea-plan').disabled"), true);
+  await click('.work-idea h3 a');
+  await waitFor(() => evaluate("document.querySelector('#objects-panel h1').textContent === 'Pocket price checker'"));
+  assert.match(await evaluate("document.querySelector('.work-content').textContent"), /Комментарии владельца.*<b>Owner fixture note<\/b>/);
+  assert.equal(await visible('.work-content b'), false);
+  await click('.work-back');
+  await waitFor(() => visible('.idea-plan'));
+  assert.equal(await evaluate("document.querySelector('.idea-plan').textContent"), 'в плане ✓');
+  assert.equal(await evaluate("document.querySelector('.work-idea .work-reactions [aria-pressed=true]').textContent"), '🧪');
   await click('[data-tab=calendar]');
   await waitFor(() => visible('.calendar-detail'));
   assert.match(await evaluate("document.querySelector('.calendar-detail').textContent"), /Buy batteries.*Sort photos.*Water plants/);
@@ -422,14 +477,13 @@ try {
   await waitFor(() => evaluate("document.querySelector('.calendar-search').textContent.includes('Review December')"));
   assert.match(await evaluate("document.querySelector('.calendar-search').textContent"), /Review the draft.*Review December/);
   await click('[data-tab=ideas]');
-  await waitFor(() => visible('.work-comment'));
-  assert.equal(await evaluate("document.querySelector('.work-comment textarea').value"), 'Owner fixture note');
+  await waitFor(() => visible('.idea-plan'));
+  assert.equal(await evaluate("document.querySelector('.idea-plan').textContent"), 'в плане ✓');
   assert.equal(await evaluate('window.lastGitHubRequest'), undefined);
 
   // Mock real API writes to verify optimistic rendering and rollback without a token or network.
   const files = {};
-  for (const file of ['today.json', 'todo.json', 'reminders.json',
-    'learning/learning-20300101-sample-course.md', 'projects/project-20300101-sample-app.md']) {
+  for (const file of ['today.json', 'todo.json', 'reminders.json', 'objects.json']) {
     files[file] = await readFile(new URL('fixtures/lab/' + file, root), 'base64');
   }
   const mockWrites = files => {
@@ -643,6 +697,7 @@ try {
     const routes = [
       ['today', '[data-id=t4]'],
       ['directions', '.work-object'],
+      ['ideas', '.idea-list .work-idea'],
       ['calendar', '.calendar-day.lvl2'],
       ['settings', '#settings-panel:not([hidden]) #theme'],
     ];
@@ -661,6 +716,12 @@ try {
           await waitFor(() => visible(selector));
           assert.equal(await evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth'), true);
           assert.equal(await evaluate(tabInView), true);
+          if (route === 'ideas') {
+            await waitFor(() => evaluate("!document.querySelector('.idea-plan').disabled"));
+            await click('.idea-plan');
+            await workIdle();
+            await evaluate('document.activeElement.blur(); window.scrollTo(0, 0)');
+          }
           const name = 'design-' + route + '-' + width + '-' + theme;
           await capture(name, width, height);
           const html = await evaluate('(' + consoleMarkup.toString() + ')(' + JSON.stringify(route) + ',' + JSON.stringify(theme) + ')');

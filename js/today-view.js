@@ -1,11 +1,10 @@
-import { parseFrontMatter } from './frontmatter.js';
 import { createFocusView } from './focus-view.js';
 import { createTimers } from './timers.js';
 import { strings } from './strings.js';
 import { localIsoMinutes, today } from './util.js';
 import {
   addReminder, addTodo, carryDue, clearDone, completeReminder, emptyLists, planGroups, planPath,
-  focusOrder, nextFocusRow, planProgress, referencePath, reminderPath, reorder, rowActions, rowRank,
+  editDailyIdea, focusOrder, nextFocusRow, planProgress, reminderPath, reorder, rowActions, rowRank,
   setDone, setImportant,
   setNotes, snooze, splitReminders, todoPath, unpostpone, postpone,
 } from './today-data.js';
@@ -45,7 +44,7 @@ const dayLabel = date => date.slice(8, 10) + '.' + date.slice(5, 7) + '.' + date
 const atLabel = at => dayLabel(at) + ' · ' + at.slice(11, 16);
 const focusHistoryKey = 'prpFocus';
 
-export function createTodayView(panel, { fixture, onResponse }) {
+export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   const heading = el('div', undefined, 'today-heading');
   const titleGroup = el('div');
   const date = el('p', undefined, 'today-date');
@@ -93,6 +92,10 @@ export function createTodayView(panel, { fixture, onResponse }) {
   const postponedRows = el('ul', undefined, 'today-rows');
   postponedPanel.append(postponedTitle, postponedRows);
   plan.append(postponedPanel);
+  const dailyIdeas = el('section', undefined, 'today-card today-daily-ideas');
+  const ideaRows = el('div', undefined, 'work-group');
+  dailyIdeas.append(el('h2', strings.work.dailyIdeas), ideaRows);
+  plan.append(dailyIdeas);
 
   const aside = el('aside', undefined, 'today-column');
   const reminders = el('section', undefined, 'today-card');
@@ -138,9 +141,11 @@ export function createTodayView(panel, { fixture, onResponse }) {
   panel.append(heading, toast, status, body, dialog, focus.element);
 
   let source;
-  let scope;
+  let lab;
   let data;
   let statuses = new Map();
+  let ideaPaths = new Map();
+  const ideaDrafts = new Map();
   let pending = false;
   let loading;
   let revision = 0;
@@ -189,13 +194,22 @@ export function createTodayView(panel, { fixture, onResponse }) {
     clearButton.disabled = pending;
   }
 
-  async function read(path, client = source) {
-    try {
-      return (await client.getFile(path)).text;
-    } catch (error) {
-      if (error.status === 404 && Object.hasOwn(emptyLists, path)) return json(emptyLists[path]);
-      throw error;
+  const todayPaths = [planPath, todoPath, reminderPath];
+
+  function displaySnapshot(files, entries) {
+    const snapshot = Object.fromEntries(todayPaths.map((path, i) => [path, JSON.parse(files[i].text)]));
+    const plan = carryDue(snapshot[planPath]);
+    if (data && data[planPath].date !== plan.date) {
+      closeFocus();
+      ideaDrafts.clear();
     }
+    data = { ...snapshot, [planPath]: plan };
+    statuses = new Map(entries.map(entry => [entry.id, entry.status]));
+    ideaPaths = new Map(entries.filter(entry => entry.type === 'idea').map(entry => [entry.id, entry.path]));
+    status.textContent = '';
+    reminderAt.value ||= localIsoMinutes(now());
+    render();
+    onFirstRender();
   }
 
   async function refresh() {
@@ -207,29 +221,16 @@ export function createTodayView(panel, { fixture, onResponse }) {
     const client = source;
     const version = revision;
     if (!data) status.textContent = s.loading;
-    const request = Promise.all([planPath, todoPath, reminderPath].map(async path => [path, JSON.parse(await read(path, client))]));
+    const request = Promise.all([
+      ...todayPaths.map(path => lab.refresh(path, Object.hasOwn(emptyLists, path) ? json(emptyLists[path]) : undefined)),
+      lab.refreshObjects(),
+    ]);
     loading = request;
     setControlState();
     try {
-      const snapshot = Object.fromEntries(await request);
-      const plan = carryDue(snapshot[planPath]);
-      const refs = new Set(plan.items.map(item => item.ref).filter(referencePath));
-      const states = await Promise.all([...refs].map(async ref => {
-        try {
-          const { text } = await client.getFile(referencePath(ref));
-          return [ref, parseFrontMatter(text).attributes.status];
-        } catch (error) {
-          if (error.status === 404) return [ref, null];
-          throw error;
-        }
-      }));
+      const [plan, todos, reminders, entries] = await request;
       if (version !== revision) return;
-      if (focusSession && data[planPath].date !== plan.date) closeFocus();
-      data = { ...snapshot, [planPath]: plan };
-      statuses = new Map(states);
-      status.textContent = '';
-      reminderAt.value ||= localIsoMinutes(now());
-      render();
+      displaySnapshot([plan, todos, reminders], entries);
     } catch {
       if (version !== revision) return;
       if (data) message(s.loadError, true);
@@ -246,6 +247,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
   async function apply(path, mutate, what) {
     if (pending || !source || !data) return false;
     const client = source;
+    const activeLab = lab;
     const before = data[path];
     const expectedDay = data[planPath].date;
     const next = mutate(before);
@@ -257,15 +259,16 @@ export function createTodayView(panel, { fixture, onResponse }) {
     data = { ...data, [path]: next };
     render();
     try {
-      const { text } = await client.update(path, inputText => {
+      const result = await client.update(path, inputText => {
         const current = JSON.parse(inputText);
         if (path === planPath && current.date !== expectedDay) throw new Error('The plan changed day');
         const base = path === planPath ? carryDue(current) : current;
         const changed = mutate(base);
         return changed === current ? inputText : json(changed);
       }, 'lab: web — ' + what, { initial: Object.hasOwn(emptyLists, path) ? json(emptyLists[path]) : undefined });
+      activeLab.remember(path, result);
       if (version !== revision) return false;
-      data[path] = JSON.parse(text);
+      data[path] = JSON.parse(result.text);
       return true;
     } catch {
       if (version !== revision) return false;
@@ -661,6 +664,52 @@ export function createTodayView(panel, { fixture, onResponse }) {
     laterLabel.textContent = later.length ? s.later(later.length, atLabel(later[0].at)) : s.laterNone;
   }
 
+  function renderDailyIdeas() {
+    const labels = strings.work;
+    const ideas = (data[planPath].ideas ?? []).filter(idea => !idea.reaction);
+    dailyIdeas.hidden = !ideas.length;
+    ideaRows.replaceChildren(...ideas.map(idea => {
+      const id = idea.id ?? idea.ref;
+      const row = el('article', undefined, 'work-card work-daily-idea');
+      const caption = idea.title ?? id;
+      const title = el('h3', caption);
+      const path = ideaPaths.get(id);
+      if (path) {
+        const link = el('a', caption);
+        link.href = '#ideas/' + encodeURIComponent(path);
+        title.replaceChildren(link);
+      }
+      row.append(title);
+      if (idea.pitch) row.append(el('p', idea.pitch, 'work-text'));
+      const reactions = el('div', undefined, 'actions work-reactions');
+      for (const [reaction, [icon, label]] of Object.entries(labels.reactions)) {
+        reactions.append(button(icon, () =>
+          apply(planPath, plan => editDailyIdea(plan, idea, { reaction }), 'daily idea reaction'),
+        { label, disabled: pending }));
+      }
+      const form = el('form', undefined, 'work-comment');
+      const comment = el('textarea');
+      comment.rows = 2;
+      comment.value = ideaDrafts.get(id) ?? idea.comment ?? '';
+      comment.setAttribute('aria-label', labels.ownerComment);
+      comment.placeholder = labels.ownerComment;
+      comment.disabled = pending;
+      comment.addEventListener('input', () => ideaDrafts.set(id, comment.value));
+      const submit = el('button', labels.saveComment);
+      submit.type = 'submit';
+      submit.disabled = pending;
+      form.append(comment, submit);
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const saved = await apply(planPath, plan => editDailyIdea(plan, idea, { comment: comment.value.trim() }),
+          'daily idea comment');
+        if (saved) ideaDrafts.delete(id);
+      });
+      row.append(reactions, form);
+      return row;
+    }));
+  }
+
   function render() {
     body.hidden = !data;
     timerRows = [];
@@ -693,6 +742,7 @@ export function createTodayView(panel, { fixture, onResponse }) {
       return row;
     }));
     renderReminders();
+    renderDailyIdeas();
     timers.tick();
   }
 
@@ -738,25 +788,32 @@ export function createTodayView(panel, { fixture, onResponse }) {
   panel.addEventListener('touchcancel', () => { pull = undefined; }, { passive: true });
 
   return {
-    show(client, namespace) {
+    show(client, store) {
       active = true;
-      if (source !== client || scope !== namespace) {
+      if (source !== client || lab !== store) {
         closeFocus({ restore: false, goBack: false });
         source = client;
-        scope = namespace;
+        lab = store;
         data = undefined;
         pending = false;
         loading = undefined;
         refreshAfterSave = false;
         ++revision;
         todoInput.value = reminderText.value = reminderAt.value = '';
+        ideaDrafts.clear();
         render();
       }
       if (!client) {
         const link = el('a', strings.settings);
         link.href = '#settings';
         status.replaceChildren(link);
-      } else refresh();
+      } else {
+        const files = todayPaths.map(path => lab.peek(path));
+        const entries = lab.peekObjects();
+        if (!pending && files.every(Boolean) && entries) displaySnapshot(files, entries);
+        else if (data) onFirstRender();
+        refresh();
+      }
     },
     hide() {
       active = false;

@@ -11,6 +11,8 @@ last_touched: 2030-01-15
 source: fixture
 tags: []
 links: []
+origin: "agent"
+main_risk: "Prices may differ from shelf labels."
 next_step: "Ask 5 people"
 ---
 ## Суть

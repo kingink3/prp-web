@@ -1,4 +1,5 @@
-import { checklistNotes, parseChecklist, parseFrontMatter, serializeFrontMatter, setChecklist } from './frontmatter.js';
+import { checklistNotes, parseChecklist, parseFrontMatter, serializeFrontMatter, setChecklist,
+  getSection, setSection } from './frontmatter.js';
 import { localIsoMinutes, today } from './util.js';
 
 export const objectTypes = { projects: 'project', learning: 'learning', ideas: 'idea', experiments: 'experiment' };
@@ -6,7 +7,7 @@ const defaultAreas = { project: 'projects', learning: 'learning', idea: 'ideas',
 export const statusOptions = {
   project: ['active', 'paused', 'done'],
   learning: ['active', 'paused', 'done'],
-  idea: ['liked', 'parked', 'done'],
+  idea: ['new', 'liked', 'testing', 'parked', 'done', 'killed'],
   experiment: ['running', 'planned', 'done'],
 };
 
@@ -57,23 +58,70 @@ export async function listFiles(client, directory, pattern) {
     !/[\\/]/.test(entry.name) && pattern.test(entry.name)).map(entry => entry.name);
 }
 
-export function objectCard(path, markdown, config, date) {
-  const folder = path.split('/')[0];
-  if (!Object.hasOwn(objectTypes, folder)) return null;
-  const { attributes, body } = parseFrontMatter(markdown);
-  const type = objectTypes[folder];
-  const { id, title, status, next_step: nextStep, last_touched: touched } = attributes;
-  if (!id || !title || (attributes.type && attributes.type !== type)) return null;
-  const tasks = type === 'project' ? parseChecklist(markdown) : [];
-  const days = typeof touched === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(touched)
-    ? (Date.parse(date) - Date.parse(touched)) / 86400000 : NaN;
+
+function typeFromPath(path) {
+  const match = typeof path === 'string' && /^([a-z]+)\/([^/\\]+\.md)$/i.exec(path);
+  return match && Object.hasOwn(objectTypes, match[1]) ? objectTypes[match[1]] : null;
+}
+
+export const isObjectPath = path => Boolean(typeFromPath(path));
+
+function listCard(attributes, config, date) {
+  const { path, id, title, status, type, next_step: nextStep, last_touched: touched,
+    tasks_total: total, tasks_done: done } = attributes;
+  const days = /^\d{4}-\d{2}-\d{2}$/.test(touched) ? (Date.parse(date) - Date.parse(touched)) / 86400000 : NaN;
   return {
-    path, id, title, type, status, nextStep, attributes, body, tasks,
-    taskNotes: type === 'project' ? checklistNotes(markdown) : '',
+    path, id, title, status, type, nextStep, attributes,
     area: attributes.area || config.defaults[type],
-    progress: tasks.length ? [tasks.filter(task => task.done).length, tasks.length] : null,
+    progress: type === 'project' && Number.isInteger(total) && total > 0 ? [done ?? 0, total] : null,
     age: Number.isFinite(days) ? Math.max(0, days) : null,
   };
+}
+
+export function objectCard(path, markdown, config, date) {
+  const type = typeFromPath(path);
+  if (!type) return null;
+  const { attributes, body } = parseFrontMatter(markdown);
+  const { id, title } = attributes;
+  if (!id || !title || (attributes.type && attributes.type !== type)) return null;
+  const tasks = type === 'project' ? parseChecklist(markdown) : [];
+  const counts = type === 'project' ? { tasks_total: tasks.length, tasks_done: tasks.filter(task => task.done).length } : {};
+  return {
+    ...listCard({ ...attributes, ...counts, type, path }, config, date),
+    attributes, body, tasks, taskNotes: type === 'project' ? checklistNotes(markdown) : '',
+  };
+}
+
+export function parseObjectIndex(text) {
+  const { objects } = JSON.parse(text);
+  if (!Array.isArray(objects)) throw new TypeError('Expected an object index');
+  return objects.filter(entry => entry && typeof entry.id === 'string' && typeof entry.title === 'string' &&
+    typeFromPath(entry.path) && typeFromPath(entry.path) === entry.type);
+}
+
+export function objectList(entries, config, date) {
+  return entries.map(entry => listCard(entry, config, date))
+    .sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+}
+
+function toIndexEntry(card) {
+  const entry = { path: card.path, type: card.type, id: card.id, title: card.title };
+  for (const key of ['area', 'status', 'purpose', 'origin', 'main_risk', 'next_step', 'last_touched', 'created']) {
+    if (card.attributes[key] !== undefined) entry[key] = card.attributes[key];
+  }
+  if (card.progress) [entry.tasks_done, entry.tasks_total] = card.progress;
+  else if (card.type === 'project') entry.tasks_done = entry.tasks_total = 0;
+  return entry;
+}
+
+export function indexEntryFromMarkdown(path, text) {
+  const card = objectCard(path, text, { defaults: defaultAreas });
+  return card && toIndexEntry(card);
+}
+
+export async function loadLegacyObjectEntries(client) {
+  const cards = await loadObjects(client, Object.keys(objectTypes), { defaults: defaultAreas });
+  return cards.map(toIndexEntry);
 }
 
 export async function loadObjects(client, folders, config, date) {
@@ -138,6 +186,17 @@ function updateFields(markdown, patch, date) {
 export function editStatus(markdown, type, status, date) {
   if (!statusOptions[type]?.includes(status)) throw new RangeError('Invalid object status');
   return parseFrontMatter(markdown).attributes.status === status ? markdown : updateFields(markdown, { status }, date);
+}
+
+export function editIdeaComment(markdown, comment, date) {
+  const text = comment.trim().replace(/\s*\r?\n\s*/g, ' ');
+  if (!text) return markdown;
+  const heading = 'Комментарии владельца';
+  const line = '- ' + date + ': ' + text;
+  const existing = getSection(markdown, heading);
+  const eol = markdown.match(/\r\n|\n|\r/)?.[0] ?? '\n';
+  const next = setSection(markdown, heading, existing ? line + eol + existing : line);
+  return updateFields(next, {}, date);
 }
 
 export function journalLine(at, action, id) {
