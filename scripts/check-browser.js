@@ -358,8 +358,7 @@ try {
     await capture('work-' + name, 390, 844);
   }
   await click('[data-tab=directions]');
-  await waitFor(() => visible('.work-tabs button'));
-  assert.equal(await evaluate("document.querySelectorAll('.work-tabs button').length"), 5);
+  await waitFor(async () => await evaluate("document.querySelectorAll('.work-tabs button').length") === 5);  // areas load after the first paint
   await evaluate("[...document.querySelectorAll('.work-tabs button')].find(button => button.textContent === 'Проекты').click()");
   assert.match(await evaluate("document.querySelector('.work-object').textContent"), /Sample app.*Draft landing copy.*1\/3.*1 дн\. назад/);
   assert.equal(await evaluate("document.querySelector('.work-object progress').value"), 1);
