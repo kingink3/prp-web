@@ -523,7 +523,6 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
       pointer = event.pointerId;
       try { node.setPointerCapture(pointer); } catch { /* pointer already gone */ }
       node.classList.add('dragging');
-      if (event.pointerType !== 'mouse') navigator.vibrate?.(10);
     }
     node.addEventListener('pointerdown', event => {
       if (pending || event.button !== 0 || pointer !== undefined || interactive(event)) return;
