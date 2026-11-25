@@ -74,3 +74,12 @@ test('ticks a fixture task without changing any other lines and supports checkli
   assert.deepEqual(parseChecklist(edited), next);
   assert.equal(getSection(edited, 'Где остановился'), getSection(project, 'Где остановился'));
 });
+
+test('inline JSON lists of objects (agent-written sources) parse and round-trip', () => {
+  const text = '---\nid: "idea-20300115-x"\nstatus: "new"\nsources: [{"url":"https://example.org/a","title":"A, b","date":"2030-01-10"}]\n---\nBody\n';
+  const doc = parseFrontMatter(text);
+  assert.equal(doc.attributes.sources[0].title, 'A, b');
+  assert.equal(serializeFrontMatter(doc), text);
+  doc.attributes.status = 'dropped';
+  assert.match(serializeFrontMatter(doc), /sources: \[\{"url":"https:\/\/example.org\/a"/);
+});
