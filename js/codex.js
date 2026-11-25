@@ -1,3 +1,4 @@
+import { uniqueId } from './today-data.js';
 import { isRepository } from './github.js';
 import { isPullNumber } from './routine.js';
 import { localIsoMinutes } from './util.js';
@@ -17,6 +18,18 @@ export function parseCodexTasks(text) {
   const data = JSON.parse(text);
   if (!Array.isArray(data?.tasks)) throw new TypeError('Expected a Codex task list');
   return data;
+}
+
+export function createCodexTask(text, draft, at) {
+  const data = parseCodexTasks(text);
+  const id = uniqueId(data.tasks, 'cx-' + Math.floor(at.getTime() / 1000));
+  const date = localIsoMinutes(at);
+  data.tasks.push({
+    id, title: draft.title, text: draft.text, done_when: draft.done_when, ref: draft.ref,
+    repo: draft.repo || null, branch: 'codex/' + id, model: 'GPT-6.2 Sol', effort: 'medium',
+    status: 'ready', pr: null, fix: null, note: '', created: date, updated: date,
+  });
+  return JSON.stringify(data, null, 2) + '\n';
 }
 
 export function codexPrompt(task, repository) {

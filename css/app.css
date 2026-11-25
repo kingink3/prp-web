@@ -469,7 +469,7 @@ button.chk[aria-pressed="true"]::before { background: var(--ok); border-color: v
 .today-field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
 .today-field select { width: 100%; }
 .today-postponed button { font-size: 12px; }
-.today-card > summary, .work-fields summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
+.today-card > summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
 .today-status:empty { display: none; }
 
 .today-dialog {
@@ -602,17 +602,7 @@ html:has(.focus-view[open]) { overflow: hidden; }
 .badge:is([data-status="active"], [data-status="running"], [data-status="testing"]) { background: var(--b-active-bg); color: var(--b-active-fg); }
 .badge[data-status="liked"] { background: var(--b-liked-bg); color: var(--b-liked-fg); }
 .badge:is([data-status="paused"], [data-status="parked"], [data-status="blocked"]) { background: var(--b-paused-bg); color: var(--b-paused-fg); }
-.work-fields dl { display: grid; grid-template-columns: minmax(6rem, .6fr) minmax(0, 1fr); gap: 6px 12px; margin-bottom: 0; }
-.work-fields dt { font-weight: 600; color: var(--muted); }
-.work-fields dd { margin: 0; }
 .work-list { padding: 0; margin-bottom: 0; list-style: none; }
-.work-task { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; align-items: center; padding-block: 4px; }
-.work-task + .work-task { border-top: 1px dashed var(--line); }
-.work-task label { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 32px; }
-.work-task input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--ok); }
-.work-task input:checked + span { text-decoration: line-through; color: var(--muted); }
-.work-task button { padding: 3px 9px; }
-.work-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .work-group, .work-comment { display: grid; gap: 8px; }
 .work-comment button, .calendar-search .work-group button, .work-content > button { justify-self: start; }
 
@@ -702,8 +692,8 @@ html:has(.focus-view[open]) { overflow: hidden; }
   .tabs::-webkit-scrollbar { display: none; }
   .tabs a { min-height: 40px; padding-inline: 8px; }
   .layout { padding-block: 12px 36px; }
-  .btn, button, .work-task label { min-height: 40px; }
-  :is(.today-icon, .instant-help summary, .today-reminder-actions button, .work-task button) { min-width: 40px; }
+  .btn, button { min-height: 40px; }
+  :is(.today-icon, .instant-help summary, .today-reminder-actions button) { min-width: 40px; }
   .tbtn.more { min-width: 40px; min-height: 40px; }
   :is(input, select, textarea, .field input, .field textarea):not([type="checkbox"]) { font-size: 16px; min-height: 40px; }
   .today-heading { margin-bottom: 10px; }
@@ -751,3 +741,75 @@ html:has(.focus-view[open]) { overflow: hidden; }
 a.today-ref { color: inherit; text-decoration: none; }
 a.today-ref:hover { color: var(--accent); text-decoration: underline; }
 .today-links a { color: var(--accent); }
+
+html:has(.object-drawer[open]) { overflow: hidden; }
+.object-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  width: min(660px, 100%);
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  padding: max(20px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  color: var(--fg);
+  background: var(--panel);
+  border: 0;
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: -8px 0 30px rgba(15,23,42,.12);
+}
+.object-drawer::backdrop { background: var(--overlay); }
+@media (prefers-reduced-motion: no-preference) {
+  .object-drawer[open] { animation: enter-drawer .2s ease-out; }
+  @keyframes enter-drawer {
+    from { transform: translateX(100%); }
+  }
+}
+.drawer-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.drawer-head p { margin: 5px 0 0; overflow-wrap: anywhere; }
+.drawer-close { flex: none; }
+.drawer-content, .drawer-editor { min-width: 0; }
+.drawer-editor { margin: 0; padding: 0; border: 0; }
+.drawer-editor .field { margin-top: 12px; }
+.drawer-editor select { width: 100%; }
+.drawer-editor .two, .drawer-editor .three { display: grid; gap: 12px; }
+.drawer-editor .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.drawer-editor .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.drawer-editor .drawer-markdown {
+  min-height: 300px;
+  background: var(--card2);
+  font: 13px/1.55 "Cascadia Mono", Consolas, monospace;
+}
+.drawer-actions, .drawer-footer, .drawer-tasks { margin-top: 16px; }
+.drawer-tasks h2 { margin-bottom: 4px; }
+.drawer-tasks ul { margin: 0 0 8px; }
+.ptask {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.ptask label { display: flex; flex: 1; min-width: 0; gap: 8px; align-items: center; cursor: pointer; }
+.ptask label span { overflow-wrap: anywhere; }
+.ptask input { width: 20px; height: 20px; margin: 0; accent-color: var(--ok); flex: none; }
+.ptask input:checked + span { color: var(--muted); text-decoration: line-through; }
+.ptask button { flex: none; }
+.codex-draft { margin: 12px 0 16px; }
+.codex-draft h3 { margin: 0; }
+
+@media (width < 700px) {
+  .object-drawer {
+    width: 100%;
+    border: 0;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  .drawer-editor :is(.two, .three) { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .drawer-editor .drawer-markdown { font-size: 16px; }
+  .ptask label, .drawer-close, .ptask button { min-height: 40px; }
+  .drawer-close, .ptask button { min-width: 40px; }
+}

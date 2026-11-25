@@ -5,11 +5,20 @@ import { localIsoMinutes, today } from './util.js';
 export const objectTypes = { projects: 'project', learning: 'learning', ideas: 'idea', experiments: 'experiment' };
 const defaultAreas = { project: 'projects', learning: 'learning', idea: 'ideas', experiment: 'ideas' };
 export const statusOptions = {
-  project: ['active', 'paused', 'done'],
-  learning: ['active', 'paused', 'done'],
+  project: ['active', 'paused', 'blocked', 'done', 'dropped'],
+  learning: ['active', 'paused', 'done', 'dropped'],
   idea: ['new', 'liked', 'testing', 'parked', 'done', 'killed'],
-  experiment: ['running', 'planned', 'done'],
+  experiment: ['planned', 'running', 'done', 'abandoned'],
 };
+
+export const commonObjectFields = ['title', 'area', 'status', 'purpose', 'next_step'];
+export const typeObjectFields = {
+  project: ['goal', 'blocked_by'],
+  learning: ['progress', 'cadence', 'platform', 'location', 'why', 'start_date'],
+  idea: ['quick_test', 'success_signal', 'main_risk'],
+  experiment: ['hypothesis'],
+};
+export const objectPurposes = ['money', 'interest', 'learning', 'useful'];
 
 const fields = lines => parseFrontMatter(['---', ...lines, '---'].join('\n')).attributes;
 
@@ -40,7 +49,7 @@ export function parseAreas(text) {
         const flow = /^\{(.*)\}\s*(?:#.*)?$/.exec(entry[1]);
         area = flow ? [...flow[1].matchAll(/(?:^|,)\s*([\w-]+)\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^,]*)/g)]
           .map(([, key, value]) => key + ': ' + value) : [entry[1]];
-      } else if (area) area.push(line);
+      } else if (area) area.push(line.trimStart());
     } else if (section === 'defaults') {
       defaults.push(line);
     }
@@ -180,6 +189,34 @@ export function editChecklist(markdown, action, date) {
 function updateFields(markdown, patch, date) {
   const document = parseFrontMatter(markdown);
   Object.assign(document.attributes, patch, { last_touched: date });
+  return serializeFrontMatter(document);
+}
+
+export function objectHref(tab, path) {
+  return '#' + tab + '/' + encodeURIComponent(path);
+}
+
+export function editObject(markdown, type, { fields, body, previousBody }, date) {
+  const document = parseFrontMatter(markdown);
+  const editable = [...commonObjectFields, ...typeObjectFields[type]];
+  for (const [key, value] of Object.entries(fields)) {
+    if (!editable.includes(key) || typeof value !== 'string') throw new TypeError('Invalid object field');
+    if (key === 'title' && !value.trim()) throw new RangeError('Missing object title');
+    if (key === 'status' && !statusOptions[type].includes(value)) throw new RangeError('Invalid object status');
+    if (key === 'purpose' && value && !objectPurposes.includes(value)) throw new RangeError('Invalid object purpose');
+    document.attributes[key] = value;
+  }
+  if (body !== undefined) {
+    // Textareas normalize line endings. Keep an untouched body byte for byte and reject competing edits.
+    const normalize = value => value.replace(/\r\n?/g, '\n');
+    const current = normalize(document.body);
+    if (current !== previousBody && current !== body) throw new RangeError('The object body changed');
+    if (current !== body) {
+      const eol = document.body.match(/\r\n|\n|\r/)?.[0] ?? markdown.match(/\r\n|\n|\r/)?.[0] ?? '\n';
+      document.body = body.replaceAll('\n', eol);
+    }
+  }
+  document.attributes.last_touched = date;
   return serializeFrontMatter(document);
 }
 

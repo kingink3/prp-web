@@ -138,11 +138,13 @@ try {
   if (screenshots) await mkdir(screenshots, { recursive: true });
   async function capture(name, width, height, viewportOnly = false) {
     if (!screenshots) return;
-    const { cssContentSize } = await send('Page.getLayoutMetrics');
-    const { data } = await send('Page.captureScreenshot', {
-      format: 'png', fromSurface: true, captureBeyondViewport: true,
-      clip: { x: 0, y: 0, width, height: viewportOnly ? height : Math.max(height, cssContentSize.height), scale: 1 },
-    });
+    const options = { format: 'png', fromSurface: true };
+    if (!viewportOnly) {
+      const { cssContentSize } = await send('Page.getLayoutMetrics');
+      options.captureBeyondViewport = true;
+      options.clip = { x: 0, y: 0, width, height: Math.max(height, cssContentSize.height), scale: 1 };
+    }
+    const { data } = await send('Page.captureScreenshot', options);
     await writeFile(join(screenshots, name + '.png'), Buffer.from(data, 'base64'));
   }
 
@@ -357,47 +359,136 @@ try {
     await evaluate('document.activeElement.blur(); window.scrollTo(0, 0)');
     await capture('work-' + name, 390, 844);
   }
+  const drawer = '.object-drawer';
+  const editor = drawer + ' .drawer-editor';
+  const field = name => drawer + ' [name=' + name + ']';
+  const value = name => evaluate('document.querySelector(' + JSON.stringify(field(name)) + ')?.value');
+  const drawerIdle = () => waitFor(() => evaluate(
+    "document.querySelector('.object-drawer[open] .drawer-content')?.getAttribute('aria-busy') === 'false' && !!document.querySelector('.drawer-editor textarea')"));
+  const escapeDrawer = async () => {
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await waitFor(async () => !await visible(drawer + '[open]'));
+  };
+  const setField = (name, content) => evaluate(
+    'document.querySelector(' + JSON.stringify(field(name)) + ').value = ' + JSON.stringify(content));
+  const learningLink = '[data-id=t1] a.today-ref';
+  await evaluate("localStorage.setItem('prp.theme', 'dark')");
+  await send('Page.reload');
+  await waitFor(() => evaluate(ready));
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate(`window.drawerOpener = document.querySelector('${learningLink}'); window.scrollTo(0, 160); window.drawerScroll = scrollY`);
+  await click(learningLink);
+  await drawerIdle();
+  assert.match(await evaluate('location.hash'), /^#today\/learning%2F/);
+  assert.equal(await visible('#today-panel:not([hidden])'), true);
+  assert.equal(await value('title'), 'Sample course');
+  await waitFor(() => evaluate("document.querySelector('.object-drawer').getBoundingClientRect().left === 0"));
+  assert.deepEqual(await evaluate("(() => { const r = document.querySelector('.object-drawer').getBoundingClientRect(); return [r.width, r.height, innerWidth, innerHeight]; })()"),
+    [390, 844, 390, 844]);
+  assert.equal(await evaluate("Boolean(document.elementFromPoint(10, 10).closest('.object-drawer'))"), true);
+  assert.equal(await evaluate("getComputedStyle(document.body).backgroundColor"), 'rgb(23, 24, 27)');
+  await capture('object-drawer-390-dark', 390, 844, true);
+  await setField('next_step', 'Review the next unit');
+  await setField('body', (await value('body')) + '\n<b>Learning body update</b>\n');
+  await click(editor + ' button[type=submit]');
+  await drawerIdle();
+  assert.equal(await visible(drawer + ' b'), false);
+  await escapeDrawer();
+  assert.equal(await evaluate('location.hash'), '#today');
+  assert.equal(await evaluate("document.querySelector('[data-id=t1] a.today-ref') === window.drawerOpener"), true);
+  assert.equal(await evaluate('document.activeElement === window.drawerOpener'), true, 'focus returns to the original link');
+  await waitFor(() => evaluate('scrollY === window.drawerScroll'));
+  assert.equal(await evaluate("window.drawerOpener.textContent"), 'Read chapter 3');
+  await evaluate('history.forward()');
+  await drawerIdle();
+  assert.equal(await value('next_step'), 'Review the next unit');
+  assert.match(await value('body'), /<b>Learning body update<\/b>/);
+  await evaluate(`navigator.clipboard.writeText = async value => { window.drawerClipboard = value; };
+    window.open = (url, target, features) => { window.drawerWindow = { url, target, features }; }`);
+  await click('.drawer-actions button:nth-child(4)');
+  assert.match(await evaluate('window.drawerClipboard'), /learning-20300101-sample-course.*course-builder$/);
+  assert.deepEqual(await evaluate('window.drawerWindow'), {
+    url: 'https://claude.ai/code', target: '_blank', features: 'noopener,noreferrer',
+  });
+  await click('.drawer-actions button:nth-child(5)');
+  assert.equal(await evaluate('window.drawerClipboard'), 'продолжим learning-20300101-sample-course');
+  await evaluate('history.back()');
+  await waitFor(async () => !await visible(drawer + '[open]'));
+
   await click('[data-tab=directions]');
-  await waitFor(async () => await evaluate("document.querySelectorAll('.work-tabs button').length") === 5);  // areas load after the first paint
+  await waitFor(async () => await evaluate("document.querySelectorAll('.work-tabs button').length") === 5);
   await evaluate("[...document.querySelectorAll('.work-tabs button')].find(button => button.textContent === 'Проекты').click()");
   assert.match(await evaluate("document.querySelector('.work-object').textContent"), /Sample app.*Draft landing copy.*1\/3.*1 дн\. назад/);
   assert.equal(await evaluate("document.querySelector('.work-object progress').value"), 1);
   await workCapture('directions');
+  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 960, deviceScaleFactor: 1, mobile: false });
   await click('.work-object');
-  await waitFor(() => visible('.work-tasks'));
-  assert.equal(await evaluate("document.querySelectorAll('.work-task').length"), 3);
-  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.work-text a'), a => [a.protocol, a.rel])`),
-    [['https:', 'noopener noreferrer'], ['https:', 'noopener noreferrer']]);
-  await click('.work-fields summary');
-  await workCapture('project');
-  await evaluate("document.querySelector('.work-form input').value = '<b>Browser project task</b>'");
-  await click('.work-form button');
-  await workIdle();
-  assert.equal(await visible('.work-task b'), false);
-  assert.equal(await evaluate("document.querySelector('.work-task:last-child label').textContent"), '<b>Browser project task</b>');
-  await click('.work-task:last-child button:first-of-type');
-  await workIdle();
-  assert.equal(await evaluate("document.querySelector('.work-task:nth-child(3) label').textContent"), '<b>Browser project task</b>');
-  await click('.work-task:nth-child(2) input');
-  await workIdle();
-  assert.equal(await evaluate("document.querySelector('.work-content section .work-text').textContent"), '<b>Browser project task</b>');
-  await click('.work-task:nth-child(3) button:last-of-type');
-  await workIdle();
-  assert.equal(await evaluate("document.querySelector('.work-content section .work-text').textContent"), 'Show to 3 people');
-  for (const value of ['paused', 'active']) {
-    await evaluate(`(() => {
-      const select = document.querySelector('.work-content select');
-      select.value = '${value}';
-      select.dispatchEvent(new Event('change'));
-    })()`);
-    await workIdle();
-    assert.equal(await evaluate("document.querySelector('.work-content select').value"), value);
-  }
-  await click('.work-content button.primary');
-  await workIdle();
+  await drawerIdle();
+  await waitFor(() => evaluate("document.querySelector('.object-drawer').getBoundingClientRect().left === 620"));
+  assert.equal(await evaluate("document.querySelector('.object-drawer').getBoundingClientRect().width"), 660);
+  assert.equal(await visible('#objects-panel:not([hidden]) .work-grid'), true);
+  assert.equal(await evaluate("document.querySelectorAll('.ptask').length"), 3);
+  await capture('object-drawer-1280-dark', 1280, 960, true);
+  await setField('goal', 'Draft goal survives checklist changes');
+  await evaluate(`(() => {
+    const input = document.querySelector('.drawer-tasks > input');
+    input.value = '<b>Browser project task</b>';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  })()`);
+  await drawerIdle();
+  assert.equal(await visible('.ptask b'), false);
+  assert.equal(await evaluate("document.querySelector('.ptask:last-child label').textContent"), '<b>Browser project task</b>');
+  await click('.ptask:last-child button:nth-of-type(2)');
+  await drawerIdle();
+  assert.equal(await evaluate("document.querySelector('.ptask:nth-child(3) label').textContent"), '<b>Browser project task</b>');
+  await click('.ptask:nth-child(2) input');
+  await drawerIdle();
+  assert.equal(await value('next_step'), '<b>Browser project task</b>');
+  assert.equal(await value('goal'), 'Draft goal survives checklist changes');
+  await click('.ptask:nth-child(3) button:last-of-type');
+  await drawerIdle();
+  assert.equal(await value('next_step'), 'Show to 3 people');
+  await setField('status', 'paused');
+  await click(editor + ' button[type=submit]');
+  await drawerIdle();
+  await setField('status', 'active');
+  await click(editor + ' button[type=submit]');
+  await drawerIdle();
+  await click('.ptask:nth-child(3) button:first-of-type');
+  await drawerIdle();
+  await click('.drawer-actions button:nth-child(2)');
+  await drawerIdle();
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 100, y: 180, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 100, y: 180, button: 'left', clickCount: 1 });
+  await waitFor(async () => await evaluate("location.hash === '#directions'") && !await visible(drawer + '[open]'));
+  assert.equal(await evaluate("document.querySelector('.work-object progress').value"), 2);
   await click('[data-tab=today]');
   await waitFor(() => visible('[data-id^=p-]'));
-  assert.match(await evaluate("document.querySelector('[data-id^=p-]').textContent"), /Show to 3 people/);
+  assert.match(await evaluate("document.querySelector('[data-id^=p-]').textContent"), /Show to 3 people.*25/);
+
+  await click(learningLink);
+  await drawerIdle();
+  await click('.drawer-actions button:nth-child(3)');
+  await waitFor(() => visible('.codex-draft'));
+  assert.equal(await evaluate("document.querySelector('.codex-draft [name=ref]').value"), 'learning-20300101-sample-course');
+  await evaluate(`(() => {
+    const form = document.querySelector('.codex-draft');
+    form.elements.text.value = 'Add a fixture exercise';
+    form.elements.done_when.value = 'The fixture exercise is visible';
+  })()`);
+  await waitFor(() => evaluate("!document.querySelector('.codex-draft .primary').disabled"));
+  await click('.codex-draft .primary');
+  await waitFor(() => evaluate("document.querySelectorAll('#codex-list [data-codex-id]').length === 2 && document.querySelector('.codex-draft').hidden"));
+
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await send('Page.navigate', { url: url + '?fixtures=1#today/learning%2Flearning-20300101-sample-course.md' });
+  await drawerIdle();
+  await send('Page.reload');
+  await drawerIdle();
+  assert.equal(await value('title'), 'Sample course');
+  await click('.drawer-close');
+  await waitFor(async () => await evaluate("location.hash === '#today'") && !await visible(drawer + '[open]'));
 
   const fixtureRequests = count => evaluate("document.querySelector('#fixture-requests:not([hidden])')?.dataset.count === '" + count + "'");
   await send('Page.navigate', { url: url + '?fixtures=1&cold=today#today' });
@@ -456,10 +547,11 @@ try {
   assert.equal(await evaluate("document.querySelector('.idea-plan').textContent"), 'в плане ✓');
   assert.equal(await evaluate("document.querySelector('.idea-plan').disabled"), true);
   await click('.work-idea h3 a');
-  await waitFor(() => evaluate("document.querySelector('#objects-panel h1').textContent === 'Pocket price checker'"));
-  assert.match(await evaluate("document.querySelector('.work-content').textContent"), /Комментарии владельца.*<b>Owner fixture note<\/b>/);
-  assert.equal(await visible('.work-content b'), false);
-  await click('.work-back');
+  await drawerIdle();
+  assert.equal(await value('title'), 'Pocket price checker');
+  assert.match(await value('body'), /Комментарии владельца[\s\S]*<b>Owner fixture note<\/b>/);
+  assert.equal(await visible(drawer + ' b'), false);
+  await click('.drawer-close');
   await waitFor(() => visible('.idea-plan'));
   assert.equal(await evaluate("document.querySelector('.idea-plan').textContent"), 'в плане ✓');
   assert.equal(await evaluate("document.querySelector('.work-idea .work-reactions [aria-pressed=true]').textContent"), '🧪');
@@ -472,6 +564,11 @@ try {
   assert.match(await evaluate("document.querySelector('.calendar-detail').textContent"), /Old task.*Review the draft.*Return a library book/);
   assert.equal(await evaluate("document.querySelector('.calendar-day[aria-pressed=true]').classList.contains('lvl2')"), true);
   await workCapture('calendar');
+  await click('.calendar-detail a[href^="#calendar/"]');
+  await drawerIdle();
+  assert.equal(await value('title'), 'Sample app');
+  await escapeDrawer();
+  assert.equal(await evaluate("document.querySelector('.calendar-day[aria-pressed=true]').dataset.date"), '2030-01-14');
   await evaluate("const search = document.querySelector('.calendar-search input'); search.value = 'review'; search.dispatchEvent(new Event('input'))");
   await waitFor(() => evaluate("document.querySelector('.calendar-search').textContent.includes('Review December')"));
   assert.match(await evaluate("document.querySelector('.calendar-search').textContent"), /Review the draft.*Review December/);
@@ -728,6 +825,11 @@ try {
         assert.equal(await step(), labels[index]);
         assert.equal(await evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth'), true);
         if (hour === 10 && index === 2) {
+          await click('.checkin-content a[href^="#morning/"]');
+          await drawerIdle();
+          assert.equal(await value('title'), 'Pocket price checker');
+          await escapeDrawer();
+          assert.equal(await step(), labels[index]);
           assert.match(await checkInText(), /Pocket price checker/);
           await evaluate("document.querySelector('.checkin-entry input').value = 'Try two shops'; document.querySelector('.checkin-entry').requestSubmit()");
           await checkInIdle();

@@ -1,7 +1,7 @@
 import { adjacentMonth, currentHistoryDay, historyDates, isDay, monthCells, parseHistoryDay, searchHistory } from './history.js';
-import { listFiles } from './objects.js';
+import { listFiles, objectHref } from './objects.js';
 import { strings } from './strings.js';
-import { planPath, todoPath } from './today-data.js';
+import { planPath, referencePath, todoPath } from './today-data.js';
 import { eveningDate } from './util.js';
 import { button, el, link } from './work-dom.js';
 
@@ -21,7 +21,10 @@ function paintActivity(cell, day) {
 function dayRows(rows) {
   const list = el('ul', undefined, 'work-list calendar-rows');
   for (const item of rows) {
-    const row = el('li', item.title ?? item.text ?? item.task);
+    const row = el('li');
+    const title = item.title ?? item.text ?? item.task;
+    const path = referencePath(item.ref);
+    row.append(path ? link(title, objectHref('calendar', path)) : title ?? '');
     for (const value of [item.until && s.until(item.until), item.comment, item.blocker]) {
       if (value) row.append(el('small', value, 'work-muted work-text'));
     }
