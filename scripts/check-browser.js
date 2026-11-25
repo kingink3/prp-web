@@ -397,7 +397,8 @@ try {
   await escapeDrawer();
   assert.equal(await evaluate('location.hash'), '#today');
   assert.equal(await evaluate("document.querySelector('[data-id=t1] a.today-ref') === window.drawerOpener"), true);
-  assert.equal(await evaluate('document.activeElement === window.drawerOpener'), true, 'focus returns to the original link');
+  // focus comes back after the closing transition — wait for it instead of asserting at once (flaky on CI)
+  await waitFor(() => evaluate('document.activeElement === window.drawerOpener'));
   await waitFor(() => evaluate('scrollY === window.drawerScroll'));
   assert.equal(await evaluate("window.drawerOpener.textContent"), 'Read chapter 3');
   await evaluate('history.forward()');
