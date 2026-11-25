@@ -91,3 +91,28 @@ still belongs to yesterday). Both are step-by-step with pills on top (`.msteps`:
    with `until` = tomorrow.
 5. **Завтра** — draft: postponed items for tomorrow (with budget bar), next steps of active projects;
    «✓ Итоги подведены» sets `today.evening.done_at` (local ISO minutes).
+
+## Object editor (side drawer, mirror the Console)
+Opening any object (tap on a plan item title on «Сегодня», a card in «Направления» / «Идеи», a calendar ref)
+slides in a right-side drawer over the current tab (`.drawer` in the reference CSS; full-screen sheet on phones),
+instead of navigating away. ✕ / Esc / tap on the dimmed backdrop closes it; the URL hash keeps `#<tab>/<path>` so
+back/forward and reload work. Contents, top to bottom:
+- meta line: type icon · type ru · path;
+- «Название» input;
+- three selects: «Направление» (areas from config/areas.yaml), «Статус» (statuses of this type, ru labels),
+  «Цель» (money / interest / learning / useful → заработок / интерес / обучение / польза);
+- «Следующий шаг» input;
+- type fields, two per row: project — goal «Цель», blocked_by «Что блокирует»; learning — progress «Прогресс»,
+  cadence «Режим (напр. daily 30 min)», platform «Платформа», location «Где материал», why «Зачем»,
+  start_date «Старт (ГГГГ-ММ-ДД)»; idea — quick_test «Быстрый тест», success_signal «Сигнал успеха»,
+  main_risk «Главный риск»; experiment — hypothesis «Гипотеза»;
+- project only: «Задачи» checklist from `## Задачи` (tick, «＋ сегодня», ↑, ✕, input «Новая задача проекта (Enter)»);
+- «Содержание (markdown)» — a textarea with the body (everything after the front matter), monospace;
+- buttons: «Сохранить» (primary: writes the front matter fields + body in one commit, updates last_touched, journal
+  line as a second commit), «В план на сегодня» (plan item: title = next_step or title, ref, kind, 25 min),
+  «🤖 → Codex» (project / idea / experiment / learning: opens the Codex task form in «Ещё» prefilled with this ref),
+  «🎓 Собрать курс» (learning: copies «собери курс <id> по скиллу course-builder» and opens
+  https://claude.ai/code in a new tab), «↗ в Claude Code» (copies
+  «продолжим <id>» / «разберём <id>» and opens https://claude.ai/code in a new tab). No «Чат с агентом» on the web.
+- footer: «Создано … · изменено … · source · от агента».
+Unknown front matter keys are preserved untouched on save (round-trip of the front matter module).
