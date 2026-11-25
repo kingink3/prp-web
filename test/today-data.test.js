@@ -117,3 +117,9 @@ test('snoozes from the later of now and the scheduled time', () => {
   assert.equal(snooze(reminders, 'r-2', reminders.reminders[1].at, 60, now).reminders[1].at, '2030-01-20T10:30');
   assert.equal(snooze(reminders, 'r-1', '2030-01-14T09:00', 10, now), reminders);
 });
+
+test('a to-do done on an earlier day is not listed', () => {
+  const list = { todos: [{ id: 'a', text: 'old', done: true, done_at: '2030-01-14T21:02' }, { id: 'b', text: 'open', done: false }] };
+  const groups = planGroups({ date: '2030-01-15', items: [] }, list, new Map());
+  assert.deepEqual(groups.tasks.map(row => row.item.id), ['b']);
+});

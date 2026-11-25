@@ -222,7 +222,11 @@ export function planGroups(plan, todoList, statuses) {
     const group = item.kind === 'learning' ? 'learning' : path && !path.startsWith('learning/') ? 'projects' : 'tasks';
     groups[group].push({ item, path: planPath, key: 'items' });
   }
-  for (const item of todoList.todos) if (!item.hidden) groups.tasks.push({ item, path: todoPath, key: 'todos' });
+  // done to-dos show only on the day they were done (the calendar keeps them)
+  for (const item of todoList.todos) {
+    if (item.hidden || (item.done && plan.date && !String(item.done_at ?? '').startsWith(plan.date))) continue;
+    groups.tasks.push({ item, path: todoPath, key: 'todos' });
+  }
   for (const group of Object.values(groups)) group.sort((a, b) => rowRank(a.item) - rowRank(b.item));
   return groups;
 }
