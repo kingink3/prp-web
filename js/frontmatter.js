@@ -55,6 +55,10 @@ function scalar(value) {
 }
 
 function parseValue(value) {
+  // Inline JSON (e.g. `sources: [{"url": …, "date": …}]` written by agents) — a valid YAML flow value.
+  if (/^\[\s*\{/.test(value) || value.startsWith('{')) {
+    try { return JSON.parse(value); } catch { /* fall back to the simple list parser */ }
+  }
   if (!(value.startsWith('[') && value.endsWith(']'))) return scalar(value);
   const items = value.slice(1, -1);
   const commas = outsideQuotes(items, char => char === ',', true);
