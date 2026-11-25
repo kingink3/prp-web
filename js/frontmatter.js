@@ -3,6 +3,7 @@ const linesOf = text => text.match(/[^\r\n]*(?:\r\n|\n|\r)|[^\r\n]+$/g) ?? [];
 const endingOf = line => line.match(/(?:\r\n|\n|\r)$/)?.[0] ?? '';
 const lineText = line => line.replace(/(?:\r\n|\n|\r)$/, '');
 const defaultEnding = lines => lines.map(endingOf).find(Boolean) ?? '\n';
+const fieldLine = /^(([ \t]*)([a-z_][a-z0-9_-]*):[ \t]*)(.*)$/i;
 const listItem = /^[ \t]*-[ \t]+(.*)$/;
 const taskItem = /^([ \t]*-[ \t]+\[)([ xX])(\][ \t]+)(.*?)([ \t]*)$/;
 const tasksTitle = 'Задачи';
@@ -72,10 +73,14 @@ export function parseFrontMatter(markdown) {
   const lines = linesOf(markdown);
   const end = frontMatterEnd(lines);
   const fields = new Map();
+  const indentation = Math.min(...lines.slice(1, end).flatMap(line => {
+    const match = fieldLine.exec(lineText(line));
+    return match ? [match[2].length] : [];
+  }));
   for (let index = 1; index < end; index++) {
-    const match = /^([ \t]*([a-z_][a-z0-9_-]*):[ \t]*)(.*)$/i.exec(lineText(lines[index]));
-    if (!match) continue;
-    const [, prefix, key, raw] = match;
+    const match = fieldLine.exec(lineText(lines[index]));
+    if (!match || match[2].length !== indentation) continue;
+    const [, prefix, , key, raw] = match;
     const { value, suffix } = splitValue(raw);
     const items = [];
     if (!value) {

@@ -1,4 +1,5 @@
-import { CODEX_PATH, CODEX_STATUSES, codexActionStatus, codexPrompt, codexPullRequest, parseCodexTasks, updateCodexTask } from './codex.js';
+import { isRepository } from './github.js';
+import { CODEX_PATH, CODEX_STATUSES, codexActionStatus, codexPrompt, codexPullRequest, createCodexTask, parseCodexTasks, updateCodexTask } from './codex.js';
 import { fireRoutine, isRoutineUrl, routinePayload } from './routine.js';
 import { strings } from './strings.js';
 import { localIsoMinutes } from './util.js';
@@ -15,6 +16,36 @@ export function createMoreView(panel, { fixture, getRoutine, onResponse }) {
   const taskNotice = panel.querySelector('#codex-notice');
   const taskList = panel.querySelector('#codex-list');
   const refresh = panel.querySelector('#codex-refresh');
+  const taskForm = el('form', undefined, 'more-form codex-draft');
+  const draftFields = {};
+  taskForm.hidden = true;
+  const draftHeading = el('h3', s.newTask);
+  draftHeading.id = 'codex-draft-heading';
+  taskForm.setAttribute('aria-labelledby', draftHeading.id);
+  taskForm.append(draftHeading);
+  for (const [key, labelText, multiline] of [
+    ['ref', s.taskRef], ['title', s.taskTitle], ['repo', s.taskRepo],
+    ['text', s.taskText, true], ['done_when', s.taskDone, true],
+  ]) {
+    const label = el('label', labelText, 'field');
+    const field = el(multiline ? 'textarea' : 'input');
+    if (multiline) field.rows = 3;
+    field.name = key;
+    field.readOnly = key === 'ref';
+    field.required = key !== 'repo';
+    draftFields[key] = field;
+    label.append(field);
+    taskForm.append(label);
+  }
+  const submitTask = el('button', s.createTask, 'btn primary');
+  const cancelTask = button(s.closeTask, () => {
+    taskForm.hidden = true;
+    refresh.focus();
+  }, 'btn');
+  const formActions = el('div', undefined, 'actions');
+  formActions.append(submitTask, cancelTask);
+  taskForm.append(formActions);
+  taskNotice.before(taskForm);
   let view;
   let firing = false;
 
@@ -55,6 +86,33 @@ export function createMoreView(panel, { fixture, getRoutine, onResponse }) {
     event.preventDefault();
     dispatch(input.value, notice);
   });
+  taskForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const state = view;
+    if (!state?.client || state.busy || taskForm.hidden) return;
+    const draft = Object.fromEntries(Object.entries(draftFields).map(([key, field]) => [key, field.value.trim()]));
+    if (!draft.title || !draft.text || !draft.done_when || (draft.repo && !isRepository(draft.repo))) {
+      showNotice(taskNotice, s.invalidTask, 'error');
+      return;
+    }
+    const at = new Date();
+    setBusy(state, true);
+    showNotice(taskNotice, '');
+    try {
+      const result = await state.client.update(CODEX_PATH, text => createCodexTask(text, draft, at),
+        'lab: web - create Codex task', { initial: '{"tasks":[]}' });
+      if (view !== state) return;
+      state.tasks = parseCodexTasks(result.text).tasks;
+      taskForm.hidden = true;
+      render(state, state.tasks.at(-1).id);
+      showNotice(taskNotice, s.taskCreated, 'success');
+    } catch {
+      if (view === state) showNotice(taskNotice, s.saveError, 'error');
+    } finally {
+      onResponse(state.client);
+      setBusy(state, false);
+    }
+  });
   refresh.addEventListener('click', () => load(view));
 
   async function load(state) {
@@ -83,6 +141,7 @@ export function createMoreView(panel, { fixture, getRoutine, onResponse }) {
     if (view !== state) return;
     taskList.setAttribute('aria-busy', String(busy));
     refresh.disabled = busy;
+    submitTask.disabled = cancelTask.disabled = busy;
     for (const control of taskList.querySelectorAll('button')) control.disabled = busy;
   }
 
@@ -196,6 +255,19 @@ export function createMoreView(panel, { fixture, getRoutine, onResponse }) {
       if (client) load(view);
       else taskList.append(link(strings.settings, '#settings'));
     },
-    hide() { view = undefined; },
+    prepareTask(card) {
+      taskForm.reset();
+      draftFields.ref.value = card.id;
+      draftFields.title.value = card.title;
+      if (typeof card.attributes.repo === 'string' && isRepository(card.attributes.repo)) {
+        draftFields.repo.value = card.attributes.repo;
+      }
+      taskForm.hidden = false;
+      draftFields.title.focus();
+    },
+    hide() {
+      view = undefined;
+      taskForm.hidden = true;
+    },
   };
 }

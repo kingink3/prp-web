@@ -1,27 +1,19 @@
-import { bodySections } from './frontmatter.js';
 import { ideaFilterStatuses, ideaList, ideaStatus } from './ideas.js';
 import { areasPath } from './lab-data.js';
-import { editChecklist, editIdeaComment, editStatus, isObjectPath, objectCard, objectList, parseAreas,
-  saveObjectEdit, statusOptions, taskReference } from './objects.js';
+import { editIdeaComment, editStatus, objectHref, objectList, parseAreas,
+  saveObjectEdit } from './objects.js';
 import { strings } from './strings.js';
-import { addIdeaToPlan, addObjectToPlan, editDailyIdea, ideaInPlan, planPath } from './today-data.js';
+import { addIdeaToPlan, editDailyIdea, ideaInPlan, planPath } from './today-data.js';
 import { today } from './util.js';
-import { appendLinkedText, button, el, link } from './work-dom.js';
+import { button, el, link } from './work-dom.js';
 
 const s = strings.work;
-const objectHref = (route, path) => '#' + route + '/' + encodeURIComponent(path);
 function statusLabel(status, type) {
   const labels = type === 'idea' ? s.ideaStatuses : s.status;
   const key = type === 'idea' ? ideaStatus(status) : status;
   return Object.hasOwn(labels, key) ? labels[key] : status;
 }
 const planJson = value => JSON.stringify(value, null, 2) + '\n';
-
-function textBlock(value) {
-  const node = el('p', undefined, 'work-text');
-  appendLinkedText(node, String(value));
-  return node;
-}
 
 function renderCard(card, route) {
   const anchor = link('', objectHref(route, card.path), 'work-card work-object');
@@ -145,7 +137,7 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
     const active = scope;
     const { client, lab } = active;
     const cachedConfig = lab.peek(areasPath)?.text ?? '';
-    const entries = !current.path && lab.peekObjects();
+    const entries = lab.peekObjects();
     if (current.route === 'ideas') {
       const cachedPlan = lab.peek(planPath);
       current.plan = cachedPlan ? JSON.parse(cachedPlan.text) : undefined;
@@ -160,31 +152,12 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
     try {
       await active.pending?.catch(() => {});
       if (current !== view) return;
-      if (current.path && !isObjectPath(current.path)) {
-        render();
-        feedback();
-        return;
-      }
-      const config = lab.refresh(areasPath, '');
-      if (current.path) {
-        const file = client.getFile(current.path).catch(error => {
-          if (error.status === 404) return null;
-          throw error;
-        });
-        const [areaFile, detail] = await Promise.all([config, file]);
-        if (current !== view) return;
-        current.config = parseAreas(areaFile.text);
-        current.date = fixture ? '2030-01-15' : today();
-        current.detail = detail && objectCard(current.path, detail.text, current.config, current.date);
-        render();
-      } else {
-        const [areaFile, updated] = await Promise.all([config, lab.refreshObjects()]);
-        await active.pending?.catch(() => {});
-        if (current !== view) return;
-        const latest = lab.peekObjects() ?? updated;
-        if (!entries || areaFile.text !== cachedConfig || JSON.stringify(latest) !== JSON.stringify(entries)) {
-          displayList(current, latest, areaFile.text);
-        }
+      const [areaFile, updated] = await Promise.all([lab.refresh(areasPath, ''), lab.refreshObjects()]);
+      await active.pending?.catch(() => {});
+      if (current !== view) return;
+      const latest = lab.peekObjects() ?? updated;
+      if (!entries || areaFile.text !== cachedConfig || JSON.stringify(latest) !== JSON.stringify(entries)) {
+        displayList(current, latest, areaFile.text);
       }
       feedback();
     } catch {
@@ -209,8 +182,7 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
       const result = await saveObjectEdit(active.client, card, mutate, { at, description, commit });
       active.journal = result.saveJournal;
       active.lab.patchObject(card.path, result.text);
-      if (current.path) current.detail = objectCard(card.path, result.text, current.config, current.date);
-      else current.cards = objectList(active.lab.peekObjects(), current.config, current.date);
+      current.cards = objectList(active.lab.peekObjects(), current.config, current.date);
       onSuccess?.();
     }, s.saved, onFailure);
   }
@@ -241,113 +213,6 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
     column.append(cards.length ? grid : el('p', s.noCards, 'work-muted'));
     return [tabs, column];
   }
-
-  function detailFields(card) {
-    const group = el('details', undefined, 'work-card work-fields');
-    group.append(el('summary', s.fields));
-    const details = el('dl');
-    for (const [key, value] of Object.entries(card.attributes)) {
-      const label = Object.hasOwn(s.field, key) ? s.field[key] : key;
-      const display = key === 'status' ? statusLabel(value, card.type)
-        : key === 'type' ? s.type[card.type]
-          : key === 'area' ? view.config.areas.find(area => area.id === value)?.title ?? value
-            : Array.isArray(value) ? value.join('\n') : value;
-      const field = el('dd', undefined, 'work-text');
-      if (display !== undefined && display !== null) appendLinkedText(field, String(display));
-      details.append(el('dt', label), field);
-    }
-    group.append(details);
-    return group;
-  }
-
-  function renderTasks(card) {
-    const section = el('section', undefined, 'work-card work-tasks');
-    const counts = card.progress ?? [0, 0];
-    section.append(el('h2', s.progress + ' · ' + counts.join('/')));
-    const edit = (action, description) => updateCard(card,
-      (text, date) => editChecklist(text, action, date), description, 'project checklist');
-    const list = el('ul', undefined, 'work-list');
-    card.tasks.forEach((task, index) => {
-      const row = el('li', undefined, 'work-task');
-      const reference = taskReference(card.tasks, index);
-      const check = mutable(el('input'));
-      check.type = 'checkbox';
-      check.checked = task.done;
-      check.addEventListener('change', () => {
-        const done = check.checked;
-        check.checked = task.done;
-        edit({ kind: 'tick', task: reference, done }, (done ? s.taskTicked : s.taskUnticked)(task.text));
-      });
-      const label = el('label');
-      label.append(check, el('span', task.text));
-      const up = mutable(button('↑', () => edit({
-        kind: 'up', task: reference, previous: taskReference(card.tasks, index - 1),
-      }, s.taskRaised(task.text))));
-      up.setAttribute('aria-label', s.up);
-      up.dataset.disabled = String(!index);
-      const remove = mutable(button('✕', () => edit({ kind: 'remove', task: reference }, s.taskRemoved(task.text))));
-      remove.setAttribute('aria-label', s.remove);
-      row.append(label, up, remove);
-      list.append(row);
-    });
-    const form = el('form', undefined, 'work-form');
-    const input = el('input');
-    input.required = true;
-    input.placeholder = s.taskInput;
-    input.setAttribute('aria-label', s.taskInput);
-    const add = mutable(el('button', s.addTask));
-    add.type = 'submit';
-    form.append(input, add);
-    form.addEventListener('submit', event => {
-      event.preventDefault();
-      if (add.disabled || !input.value.trim()) return;
-      edit({ kind: 'add', text: input.value }, s.taskAdded(input.value));
-    });
-    section.append(list, form);
-    if (card.taskNotes) section.append(textBlock(card.taskNotes));
-    return section;
-  }
-
-  function renderDetail(card) {
-    const back = link(s.back, '#' + view.route, 'btn work-back');
-    if (!card) return [back, el('p', s.noObject)];
-    const summary = el('section', undefined, 'work-card');
-    summary.append(el('p', s.type[card.type] + ' · ' + (statusLabel(card.status, card.type) ?? ''), 'work-muted'));
-    if (card.nextStep) summary.append(el('h2', s.nextStep), textBlock(card.nextStep));
-    const actions = el('div', undefined, 'actions');
-    const statuses = mutable(el('select'));
-    statuses.setAttribute('aria-label', s.setStatus);
-    const choices = statusOptions[card.type];
-    const options = choices.includes(card.status) ? choices : [card.status ?? '', ...choices];
-    for (const status of options) {
-      const option = el('option', statusLabel(status, card.type));
-      option.value = status;
-      option.disabled = !choices.includes(status);
-      statuses.append(option);
-    }
-    statuses.value = card.status ?? '';
-    statuses.addEventListener('change', () => {
-      const next = statuses.value;
-      updateCard(card, (text, date) => editStatus(text, card.type, next, date),
-        s.setStatus + ': ' + statusLabel(next, card.type), 'object status', undefined, () => { statuses.value = card.status ?? ''; });
-    });
-    const add = mutable(button(s.addToPlan, () => transact(async active => {
-      const plan = await readPlan(active);
-      const at = fixture ? new Date(plan.date + 'T10:30') : new Date();
-      await writePlan(active, plan.date, data => card.type === 'idea' ? addIdeaToPlan(data, card, at) : addObjectToPlan(data, card, at), 'add object to plan');
-    }, s.addedToPlan), 'primary'));
-    actions.append(statuses, add);
-    summary.append(actions);
-    const sections = bodySections(card.body).filter(section => card.type !== 'project' || section.title !== s.progress)
-      .map(({ title, text }) => {
-        const section = el('section', undefined, 'work-card');
-        if (title) section.append(el('h2', title));
-        if (text) section.append(textBlock(text));
-        return section;
-      });
-    return [back, summary, ...(card.type === 'project' ? [renderTasks(card)] : []), detailFields(card), ...sections];
-  }
-
 
   function renderIdea(card) {
     const current = view;
@@ -419,7 +284,7 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
       current.plan = await readPlan(active);
       if (current === view) {
         // ideas of the day come from the plan: draw them once it is loaded
-        if (!current.path && (current.plan?.ideas ?? []).some(idea => !idea.reaction)) render();
+        if ((current.plan?.ideas ?? []).some(idea => !idea.reaction)) render();
         else updatePlanButtons();
       }
     } catch {
@@ -512,15 +377,14 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
   }
 
   function render() {
-    const card = view.detail;
-    heading.textContent = card?.title ?? strings[view.route];
-    if (!view.path && view.route === 'ideas' && !view.config.areas.some(area => area.id === ideaArea)) ideaArea = '';
-    content.replaceChildren(...(view.path ? renderDetail(card) : view.route === 'ideas' ? renderIdeas() : renderBoard()));
+    heading.textContent = strings[view.route];
+    if (view.route === 'ideas' && !view.config.areas.some(area => area.id === ideaArea)) ideaArea = '';
+    content.replaceChildren(...(view.route === 'ideas' ? renderIdeas() : renderBoard()));
     updatePlanButtons();
   }
 
   return {
-    show(client, lab, route, path) {
+    show(client, lab, route) {
       if (scope?.client !== client) {
         scope = { client, lab };
         selectedArea = undefined;
@@ -529,8 +393,8 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
         ideaDrafts = new Map();
         view = undefined;
       }
-      if (view?.route === route && view.path === path) return;
-      const current = view = { route, path };
+      if (view?.route === route) return;
+      const current = view = { route };
       heading.textContent = strings[route];
       if (client) load(current);
       else {
@@ -538,6 +402,12 @@ export function createObjectView(panel, { fixture, onResponse, onFirstRender }) 
         content.replaceChildren(link(strings.settings, '#settings'));
       }
       window.scrollTo(0, 0);
+    },
+    syncDrawer({ object, plan }) {
+      if (!view?.cards) return;
+      if (plan && view.route === 'ideas') view.plan = JSON.parse(scope.lab.peek(planPath).text);
+      if (object) view.cards = objectList(scope.lab.peekObjects(), view.config, view.date);
+      if (object || (plan && view.route === 'ideas')) render();
     },
     hide() { view = undefined; },
   };

@@ -4,6 +4,8 @@ import { strings } from './strings.js';
 import { createFixtureClient, fixtureMode } from './fixtures.js';
 import { createTodayView } from './today-view.js';
 import { createObjectView } from './object-view.js';
+import { createObjectDrawer } from './object-drawer.js';
+import { isObjectPath } from './objects.js';
 import { createCalendarView } from './calendar-view.js';
 import { createMoreView } from './more-view.js';
 import { createCheckInView } from './check-in-view.js';
@@ -79,9 +81,9 @@ if (fixtureStats) {
   document.querySelector('main').append(fixtureStats);
 }
 
-function measureFixture(route, detail) {
+function measureFixture(route) {
   if (!fixtureStats) return;
-  const key = route + (detail ? '/' + detail : '');
+  const key = route;
   if (fixtureMeasure?.key === key) return;
   fixtureMeasure = { key, start: fixtureClient.requests };
   fixtureStats.hidden = true;
@@ -112,6 +114,55 @@ const checkInPanel = byId('checkin-panel');
 const checkInView = createCheckInView(checkInPanel, { fixture: fixtureMode, routine: moreView, onResponse: updateExpiration });
 const checkInTab = tabs.find(tab => tab.dataset.tab === 'morning');
 let evening;
+let renderedRoute;
+let renderedClient;
+let renderedLab;
+let drawerPath;
+let drawerLink;
+let drawerChanges = {};
+let codexDraft;
+const drawerTabs = new Set(['today', 'directions', 'ideas', 'calendar', 'morning']);
+const drawerHistoryKey = 'prpObjectDrawer';
+const repository = () => fixtureMode ? 'owner/repo' : settings.repository;
+const todayNamespace = () => fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, settings.branch || 'main']);
+const drawer = createObjectDrawer({
+  fixture: fixtureMode, onResponse: updateExpiration, onClose: closeDrawer,
+  onChange(lab, kind) {
+    if (lab !== renderedLab) return;
+    drawerChanges[kind] = true;
+    if (!drawerPath) syncDrawerChanges();
+  },
+  onCodex(card) {
+    codexDraft = card;
+    location.hash = '#more';
+  },
+});
+
+function parseRoute(hash) {
+  const [tab, ...parts] = hash.slice(1).split('/');
+  const detail = parts.join('/');
+  let path;
+  if (detail && drawerTabs.has(tab) && !(tab === 'today' && detail === 'focus')) {
+    try { path = decodeURIComponent(detail); } catch { path = detail; }
+  }
+  return { tab, path, focus: tab === 'today' && detail === 'focus' };
+}
+
+function closeDrawer() {
+  if (history.state?.[drawerHistoryKey]) history.back();
+  else {
+    history.replaceState(history.state, '', '#' + renderedRoute);
+    showRoute();
+  }
+}
+
+function syncDrawerChanges() {
+  const changes = drawerChanges;
+  drawerChanges = {};
+  if (renderedRoute === 'directions' || renderedRoute === 'ideas') objectView.syncDrawer(changes);
+  if (renderedRoute === 'today' && changes.plan) todayView.show(renderedClient, renderedLab, todayNamespace());
+  if (renderedRoute === 'morning' && changes.plan) checkInView.syncDrawerPlan();
+}
 
 for (const element of document.querySelectorAll('[data-string]')) {
   element.textContent = strings[element.dataset.string];
@@ -129,45 +180,70 @@ function updateCheckInMode() {
 }
 
 function showRoute() {
-  updateCheckInMode();
-  const [requested, detail] = location.hash.slice(1).split('/');
+  const modeChanged = updateCheckInMode();
+  const { tab: requested, path, focus } = parseRoute(location.hash);
   const connected = isRepository(settings.repository ?? '') && savedToken;
   const initial = fixtureMode || connected ? 'today' : 'settings';
   const route = routes.has(requested) ? requested : initial;
-  const selected = route === 'settings' ? 'more' : route;
-  for (const tab of tabs) {
-    if (tab.dataset.tab === selected) tab.setAttribute('aria-current', 'page');
-    else tab.removeAttribute('aria-current');
-  }
-  revealActiveTab();
   const branch = settings.branch || 'main';
   const client = fixtureClient || (connected ? connectionFor(settings.repository, branch, savedToken) : null);
   const lab = fixtureLab ?? (client && connection.lab);
-  measureFixture(route, detail);
-  checkInPanel.hidden = route !== 'morning';
-  if (checkInPanel.hidden) checkInView.hide();
-  else checkInView.show(client, lab, fixtureMode ? 'owner/repo' : settings.repository, evening);
-  todayPanel.hidden = route !== 'today';
-  if (route === 'today') {
-    if (detail === 'focus') history.replaceState(history.state, '', '#today');
-    todayView.show(client, lab, fixtureMode ? 'fixtures' : JSON.stringify([settings.repository, branch]), detail === 'focus');
-  } else todayView.hide();
-  objectPanel.hidden = route !== 'directions' && route !== 'ideas';
-  if (objectPanel.hidden) objectView.hide();
-  else {
-    let path = detail;
-    try { if (detail) path = decodeURIComponent(detail); } catch { /* Show an unavailable card. */ }
-    objectView.show(client, lab, route, path);
+  const changed = renderedRoute !== route || renderedClient !== client;
+  if (!path && drawerPath) {
+    drawerPath = undefined;
+    drawer.hide();
+    if (!changed) {
+      syncDrawerChanges();
+      if (drawerLink) {
+        const opener = [...document.links].find(anchor => anchor.hash === drawerLink && anchor.getClientRects().length);
+        opener?.focus({ preventScroll: true });
+      }
+    }
+    drawerLink = undefined;
   }
-  calendarPanel.hidden = route !== 'calendar';
-  if (calendarPanel.hidden) calendarView.hide();
-  else calendarView.show(client, lab);
-  morePanel.hidden = route !== 'more';
-  if (morePanel.hidden) moreView.hide();
-  else moreView.show(client, fixtureMode ? 'owner/repo' : settings.repository);
-  byId('settings-panel').hidden = route !== 'settings';
-  const title = route === 'morning' && evening ? strings.evening : strings[route];
-  document.title = `${title} · ${strings.appName}`;
+
+  if (changed || (route === 'morning' && modeChanged) || focus) {
+    drawerChanges = {};
+    renderedRoute = route;
+    renderedClient = client;
+    renderedLab = lab;
+    const selected = route === 'settings' ? 'more' : route;
+    for (const tab of tabs) {
+      if (tab.dataset.tab === selected) tab.setAttribute('aria-current', 'page');
+      else tab.removeAttribute('aria-current');
+    }
+    revealActiveTab();
+    measureFixture(route);
+    checkInPanel.hidden = route !== 'morning';
+    if (checkInPanel.hidden) checkInView.hide();
+    else checkInView.show(client, lab, repository(), evening);
+    todayPanel.hidden = route !== 'today';
+    if (todayPanel.hidden) todayView.hide();
+    else {
+      if (focus) history.replaceState(history.state, '', '#today');
+      todayView.show(client, lab, todayNamespace(), focus);
+    }
+    objectPanel.hidden = route !== 'directions' && route !== 'ideas';
+    if (objectPanel.hidden) objectView.hide();
+    else objectView.show(client, lab, route);
+    calendarPanel.hidden = route !== 'calendar';
+    if (calendarPanel.hidden) calendarView.hide();
+    else calendarView.show(client, lab);
+    morePanel.hidden = route !== 'more';
+    if (morePanel.hidden) moreView.hide();
+    else {
+      moreView.show(client, repository());
+      if (codexDraft) moreView.prepareTask(codexDraft);
+    }
+    codexDraft = undefined;
+    byId('settings-panel').hidden = route !== 'settings';
+    const title = route === 'morning' && evening ? strings.evening : strings[route];
+    document.title = `${title} · ${strings.appName}`;
+  }
+  if (path) {
+    drawerPath = path;
+    drawer.show(client, lab, path);
+  }
 }
 
 function applyTheme(theme) {
@@ -346,8 +422,19 @@ showExpiration();
 showRoute();
 
 window.addEventListener('hashchange', showRoute);
+document.addEventListener('click', event => {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const anchor = event.target.closest('a[href^="#"]');
+  if (!anchor || anchor.target) return;
+  const { tab, path } = parseRoute(anchor.hash);
+  if (tab !== renderedRoute || !isObjectPath(path)) return;
+  event.preventDefault();
+  drawerLink = anchor.hash;
+  history.pushState({ ...history.state, [drawerHistoryKey]: true }, '', anchor.hash);
+  showRoute();
+});
 function refreshCheckInMode() {
-  if (updateCheckInMode() && !checkInPanel.hidden) showRoute();
+  showRoute();
 }
 setInterval(refreshCheckInMode, 30_000);
 document.addEventListener('visibilitychange', () => {

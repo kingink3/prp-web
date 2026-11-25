@@ -1,7 +1,7 @@
 import { CODEX_PATH, codexPrompt, parseCodexTasks, updateCodexTask } from './codex.js';
 import { completeEvening, pickCandidate, previousPlan, saveEveningNote, scheduleTest,
   stepModel, writeResumeNote } from './check-in-data.js';
-import { saveObjectEdit } from './objects.js';
+import { objectHref, saveObjectEdit } from './objects.js';
 import { routinePayload } from './routine.js';
 import { strings } from './strings.js';
 import { carryDue, editDailyIdea, editPlanText, planPath, postpone, referencePath, removeItem, todoPath } from './today-data.js';
@@ -136,10 +136,13 @@ export function createCheckInView(panel, { fixture, routine, onResponse }) {
     return grid;
   }
 
-  function row(title, detail, actions = []) {
+  function row(title, detail, actions = [], ref) {
     const item = el('article', undefined, 'mcard checkin-row');
     const text = el('div');
-    text.append(el('h3', title));
+    const heading = el('h3');
+    const path = referencePath(ref);
+    heading.append(path ? link(title, objectHref('morning', path)) : title ?? '');
+    text.append(heading);
     if (detail) text.append(el('p', detail, 'work-text work-muted'));
     item.append(text);
     if (actions.length) {
@@ -191,7 +194,7 @@ export function createCheckInView(panel, { fixture, routine, onResponse }) {
       if (step !== 'plan') actions.push(control(step === 'tails' ? s.remove : s.unschedule, () => run(state, () =>
         apply(state, ifOpen(plan => removeItem(plan, 'items', item.id)), 'remove item'))));
       const detail = [item.minutes && minutes(item.minutes), item.blocker].filter(Boolean).join(' · ');
-      return row(item.title ?? item.task, detail, actions);
+      return row(item.title ?? item.task, detail, actions, item.ref);
     });
   }
 
@@ -207,7 +210,7 @@ export function createCheckInView(panel, { fixture, routine, onResponse }) {
         react.setAttribute('aria-label', label);
         return react;
       });
-      const card = row(idea.title ?? id, idea.summary ?? idea.pitch, actions);
+      const card = row(idea.title ?? id, idea.summary ?? idea.pitch, actions, id);
       card.append(inputRow(s.ideaEdit, state.session.drafts.get(id) ?? idea.comment ?? '', s.enter,
         comment => edit({ comment }), value => state.session.drafts.set(id, value)));
       return card;
@@ -220,7 +223,7 @@ export function createCheckInView(panel, { fixture, routine, onResponse }) {
   }
 
   function choiceRow(entry, actions) {
-    return row(entry.title, entry.task !== entry.title ? entry.task : '', actions);
+    return row(entry.title, entry.task !== entry.title ? entry.task : '', actions, entry.ref);
   }
 
   function morningTest(state, entry) {
@@ -302,14 +305,14 @@ export function createCheckInView(panel, { fixture, routine, onResponse }) {
             ? [el('p', strings.moreView.missingRoutine, 'hint')] : []),
           section(s.giveCodex, model.codex.map(task => row(task.title, strings.moreView.status[task.status], [
             control(s.copy, () => copyTask(state, task)),
-          ]))),
+          ], task.ref))),
         ];
       default:
         const actions = el('div', undefined, 'actions');
         actions.append(link(s.start, '#today', 'btn primary'));
         if (model.first) actions.append(link(s.focus, '#today/focus', 'btn'));
         return [
-          budget(stats.planned, model.budget), section(s.first, model.first ? [row(model.first.title ?? model.first.text)] : []),
+          budget(stats.planned, model.budget), section(s.first, model.first ? [row(model.first.title ?? model.first.text, undefined, [], model.first.ref)] : []),
           actions,
         ];
     }
@@ -361,7 +364,7 @@ export function createCheckInView(panel, { fixture, routine, onResponse }) {
         return [section(s.evening[1], planRows(state, model.open, 'evening'))];
       case 2:
         return [section(s.evening[2], model.refs.map(entry => {
-          const card = row(entry.title);
+          const card = row(entry.title, undefined, [], entry.id);
           const value = state.session.drafts.get(entry.id) ?? state.session.notes.get(entry.id)?.text ?? entry.note;
           card.append(inputRow(s.evening[2], value, s.enter, text => run(state, async () => {
             if (!text && !entry.note && !state.session.notes.has(entry.id)) return;
@@ -378,7 +381,7 @@ export function createCheckInView(panel, { fixture, routine, onResponse }) {
       default:
         return [
           budget(model.draft.planned, model.budget),
-          section(s.postponed, model.draft.postponed.map(item => row(item.title, item.minutes && minutes(item.minutes)))),
+          section(s.postponed, model.draft.postponed.map(item => row(item.title, item.minutes && minutes(item.minutes), [], item.ref))),
           section(work.nextStep, model.draft.projects.map(entry => choiceRow(entry, []))),
           model.doneAt ? el('p', s.completedAt(model.doneAt.slice(11, 16)), 'notice success') :
             control(s.complete, () => run(state, () => apply(state, completeEvening,
@@ -428,6 +431,11 @@ export function createCheckInView(panel, { fixture, routine, onResponse }) {
       showNotice(notice, '');
       if (client) load(view);
       else content.replaceChildren(link(strings.settings, '#settings'));
+    },
+    syncDrawerPlan() {
+      if (!view?.session) return;
+      view.plan = JSON.parse(view.lab.peek(planPath).text);
+      render(view);
     },
     hide() {
       if (view?.busy) suspended = view;
