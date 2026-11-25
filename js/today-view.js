@@ -1,4 +1,5 @@
 import { createFocusView } from './focus-view.js';
+import { link } from './work-dom.js';
 import { createTimers } from './timers.js';
 import { askNotifications, chime, enableAudio, notify } from './sound.js';
 import {
@@ -47,6 +48,15 @@ const json = data => JSON.stringify(data, null, 2) + '\n';
 const dayLabel = date => date.slice(8, 10) + '.' + date.slice(5, 7) + '.' + date.slice(0, 4);
 const atLabel = at => dayLabel(at) + ' · ' + at.slice(11, 16);
 const focusHistoryKey = 'prpFocus';
+
+const REF_ROUTES = { learning: ['directions', 'learning'], project: ['directions', 'projects'],
+  experiment: ['directions', 'experiments'], idea: ['ideas', 'ideas'] };
+function refHref(ref) {
+  const m = /^(learning|project|experiment|idea)-\d{8}-[a-z0-9-]+$/.exec(String(ref ?? ''));
+  if (!m) return '';
+  const [route, folder] = REF_ROUTES[m[1]];
+  return '#' + route + '/' + encodeURIComponent(folder + '/' + ref + '.md');
+}
 
 export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
   const heading = el('div', undefined, 'today-heading');
@@ -685,10 +695,22 @@ export function createTodayView(panel, { fixture, onResponse, onFirstRender }) {
       star.setAttribute('aria-label', s.important);
       title.append(star, ' ');
     }
-    const label = el('span', item.title ?? item.text, 'today-row-label');
+    // A plan item with a ref opens its card (learning / project / experiment / idea), as in the Console.
+    const href = refHref(item.ref);
+    const label = href ? link(item.title ?? item.text, href, 'today-row-label today-ref') : el('span', item.title ?? item.text, 'today-row-label');
     title.append(label);
     info.append(title);
     if (Number.isFinite(item.minutes)) info.append(el('p', s.minutes(item.minutes), 'today-muted today-estimate'));
+    const urls = (Array.isArray(item.links) ? item.links : []).filter(l => /^https?:\/\//i.test(l?.url ?? ''));
+    if (urls.length) {
+      const line = el('p', undefined, 'today-muted today-links');
+      urls.forEach((l, k) => {
+        const a = link(l.title || l.url, l.url);
+        a.target = '_blank'; a.rel = 'noopener noreferrer';
+        line.append(...(k ? [' · ', a] : [a]));
+      });
+      info.append(line);
+    }
     for (const field of ['comment', 'blocker']) {
       if (item[field]?.trim()) info.append(el('p', s.noteLine(s[field], item[field]), 'today-muted'));
     }
