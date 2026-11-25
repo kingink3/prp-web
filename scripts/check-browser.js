@@ -395,7 +395,10 @@ try {
   await drawerIdle();
   assert.equal(await visible(drawer + ' b'), false);
   await escapeDrawer();
-  assert.equal(await evaluate("location.hash === '#today' && document.activeElement === window.drawerOpener && scrollY === window.drawerScroll"), true);
+  assert.equal(await evaluate('location.hash'), '#today');
+  assert.equal(await evaluate("document.querySelector('[data-id=t1] a.today-ref') === window.drawerOpener"), true);
+  assert.equal(await evaluate('document.activeElement === window.drawerOpener'), true, 'focus returns to the original link');
+  await waitFor(() => evaluate('scrollY === window.drawerScroll'));
   assert.equal(await evaluate("window.drawerOpener.textContent"), 'Read chapter 3');
   await evaluate('history.forward()');
   await drawerIdle();

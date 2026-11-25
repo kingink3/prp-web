@@ -118,7 +118,7 @@ let renderedRoute;
 let renderedClient;
 let renderedLab;
 let drawerPath;
-let drawerLink;
+let drawerReturn;
 let drawerChanges = {};
 let codexDraft;
 const drawerTabs = new Set(['today', 'directions', 'ideas', 'calendar', 'morning']);
@@ -190,16 +190,18 @@ function showRoute() {
   const lab = fixtureLab ?? (client && connection.lab);
   const changed = renderedRoute !== route || renderedClient !== client;
   if (!path && drawerPath) {
-    drawerPath = undefined;
+    const origin = drawerReturn;
+    drawerPath = drawerReturn = undefined;
     drawer.hide();
     if (!changed) {
       syncDrawerChanges();
-      if (drawerLink) {
-        const opener = [...document.links].find(anchor => anchor.hash === drawerLink && anchor.getClientRects().length);
+      if (origin) {
+        window.scrollTo(origin.x, origin.y);
+        const opener = origin.anchor?.isConnected ? origin.anchor : [...document.links]
+          .find(anchor => anchor.hash === origin.anchor?.hash && anchor.getClientRects().length);
         opener?.focus({ preventScroll: true });
       }
     }
-    drawerLink = undefined;
   }
 
   if (changed || (route === 'morning' && modeChanged) || focus) {
@@ -241,6 +243,7 @@ function showRoute() {
     document.title = `${title} · ${strings.appName}`;
   }
   if (path) {
+    drawerReturn ??= { x: scrollX, y: scrollY };
     drawerPath = path;
     drawer.show(client, lab, path);
   }
@@ -429,7 +432,7 @@ document.addEventListener('click', event => {
   const { tab, path } = parseRoute(anchor.hash);
   if (tab !== renderedRoute || !isObjectPath(path)) return;
   event.preventDefault();
-  drawerLink = anchor.hash;
+  drawerReturn = { anchor, x: scrollX, y: scrollY };
   history.pushState({ ...history.state, [drawerHistoryKey]: true }, '', anchor.hash);
   showRoute();
 });
